@@ -31,9 +31,14 @@ class Client(object):
         logger.debug(f"Client created ")
         self.options = options
         self.create_ui()
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.connect((self.options.destination, self.options.port))
-        logger.debug(f"client params filename: {self.options.filename}, port: {self.options.port}, host: {self.options.destination}")
+        try:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.connect((self.options.destination, self.options.port))
+            logger.debug(f"client params filename: {self.options.filename}, port: {self.options.port}, host: {self.options.destination}")
+        except socket.error as e:
+            logger.error(f"Error connecting to server: {e}")
+            messagebox.showerror("Connection Error", f"Error connecting to server: {e}")
+            return
         print('Conected to server')
 
         
@@ -119,8 +124,16 @@ class Client(object):
             logger.debug(setup_request)
 
             response = self.sock.recv(4096).decode()
-
             logger.debug(f"Received response from server: {response}")
+
+            # Dividir la resposta en linies
+            lines = response.splitlines()
+
+            for lin in lines:
+                if lin.startswitch("Session:"):
+                    self.session = lin.split(":")[1].strip()
+                    logger.debug(f"Session ID: {self.session}")
+                    break
 
             if "200 OK" in response:
                 logger.info("Setup successful")
@@ -161,6 +174,14 @@ class Client(object):
         Handle the Play button click event.
         """
         self.num_seq += 1
+        play_request = f'PLAY {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n'
+        self.sock.sendall(play_request.encode())
+        logger.debug(play_request)
+
+        response = self.sock.recv(4096).decode()
+        logger.debug(f"Received response from server: {response}")
+        if "200 OK" in response:
+
         
 
 
