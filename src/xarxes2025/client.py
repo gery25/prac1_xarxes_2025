@@ -18,25 +18,28 @@ __version__ = '0.0.1'
 __author__ = 'Gerard Safont <gsc23@alumnes.udl.cat>'
 
 class Client(object):
-    def __init__(self, port):       
+        
+
+    def __init__(self, options):
         """
         Initialize a new VideoStreaming client.
 
         :param port: The port to connect to.
         :param filename: The filename to ask for to connect to.
         """
-
-        
-    def __init__(self, options):
+        self.num_seq = 0
         logger.debug(f"Client created ")
-    
         self.options = options
         self.create_ui()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((self.options.destination, self.options.port))
+        logger.debug(f"client params filename: {self.options.filename}, port: {self.options.port}, host: {self.options.destination}")
+        print('Conected to server')
 
         
     def create_ui(self):
         """
-        Create the user interface for the client.
+        Create the user interface for the client. 
 
         This function creates the window for the client and its
         buttons and labels. It also sets up the window to call the
@@ -55,7 +58,7 @@ class Client(object):
 
 		# Create Buttons
         self.setup = self._create_button("Setup", self.ui_setup_event, 0, 0)
-        # self.start = self._create_button("Play", self.ui_play_event, 0, 1)
+        self.start = self._create_button("Play", self.ui_play_event, 0, 1)
         # self.pause = self._create_button("Pause", self.ui_pause_event, 0, 2)
         # self.teardown = self._create_button("Teardown", self.ui_teardown_event, 0, 3)
 
@@ -105,21 +108,18 @@ class Client(object):
         """
         Handle the Setup button click event.
         """
-        global sock
-        num_seq = 1
+        self.num_seq += 1
        
-
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
+        
         try:
-            sock.connect((self.options.destination, self.options.port))
-            logger.debug(f"Connected to server {self.options.destination}:{self.options.port}")
-
-            local_ip, local_port = sock.getsockname()
+            local_ip, local_port = self.sock.getsockname()
             
-            sock.sendall(f'SETUP {self.options.filename} RTP/1.0\nCseq: {num_seq}\nTransport: RTP/UDP; client_port= {local_port}'.encode())
-            logger.debug(f"Sent SETUP request to server {self.options.destination}:{self.options.port}")
-            response = sock.recv(self.options.port).decode()
+            setup_request = f'SETUP {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\nTransport: RTP/UDP; client_port= {local_port}\r\n'
+            self.sock.sendall(setup_request.encode())
+            logger.debug(setup_request)
+
+            response = self.sock.recv(4096).decode()
+
             logger.debug(f"Received response from server: {response}")
 
             if "200 OK" in response:
@@ -147,13 +147,21 @@ class Client(object):
     def receive_rtp(self):
         while self.running:
             try: 
-                data, _ = self.rtp_sock.recvfrom(self.options.port)
+                data, _ = self.rtp_sock.recv(20480)
                 logger.debug(f"Received RTP packet from server")
                 self.updateMovie(data)
             except socket.error as e:
                 logger.error(f"Error receiving data: {e}")
                 messagebox.showerror("Receive Error", f"Error receiving data: {e}")
                 break
+
+    
+    def ui_play_event(self):
+        """
+        Handle the Play button click event.
+        """
+        self.num_seq += 1
+        
 
 
     def updateMovie(self, data):
