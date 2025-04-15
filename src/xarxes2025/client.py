@@ -130,18 +130,21 @@ class Client(object):
             lines = response.splitlines()
 
             for lin in lines:
-                if lin.startswitch("Session:"):
+                if lin.startswith("Session:"):
                     self.session = lin.split(":")[1].strip()
                     logger.debug(f"Session ID: {self.session}")
                     break
 
             if "200 OK" in response:
                 logger.info("Setup successful")
-
-                self.rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                self.rtp_sock.bind((local_ip, local_port))
-                logger.debug(f"RTP socket create and bound to {local_ip}:{local_port}")
-
+                try:
+                    self.rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    self.rtp_sock.bind((local_ip, local_port))
+                    logger.debug(f"RTP socket create and bound to {local_ip}:{local_port}")
+                except socket.error as e:
+                    logger.error(f"Error creating RTP socket: {e}")
+                    messagebox.showerror("Socket Error", f"Error creating RTP socket: {e}")
+                    return
                 self.running = True
                 self.rtp_thread = threading.Thread(target=self.receive_rtp)
                 self.rtp_thread.start()
@@ -158,11 +161,21 @@ class Client(object):
 
 
     def receive_rtp(self):
+        buffer = bytearray()
         while self.running:
             try: 
-                data, _ = self.rtp_sock.recv(20480)
-                logger.debug(f"Received RTP packet from server")
-                self.updateMovie(data)
+                data, _ = self.rtp_sock.recvfrom(20480)
+                if data:
+                    logger.debug(f'Data: {data}')
+                    logger.debug(f"Received RTP packet of size {len(data)} bytes")
+                    buffer.extend(data)
+                    
+                    frame = self.extract_frame(buffer)
+                    if frame:
+                        logger.debug(f"Extracted frame of size {len(frame)} bytes")
+                        self.updateMovie(frame)
+                else:
+                    logger.warning("No data received from RTP socket")
             except socket.error as e:
                 logger.error(f"Error receiving data: {e}")
                 messagebox.showerror("Receive Error", f"Error receiving data: {e}")
@@ -180,18 +193,49 @@ class Client(object):
 
         response = self.sock.recv(4096).decode()
         logger.debug(f"Received response from server: {response}")
-        if "200 OK" in response:
 
+        if "200 OK" in response:
+            
+
+            self.running = True
+            self.rtp_thread = threading.Thread(target=self.receive_rtp)
+            self.rtp_thread.start()
+
+            logger.info("Play successful")
+            self.text["text"] = "Play button clicked"
+
+        else:
+            logger.error("Play failed")
+            messagebox.showerror("Play Error", "Play failed. Please check the server.")
+            return
         
+
+    def extract_frame(self, buffer):
+        try:
+            if len(buffer) < 12:
+               return None
+            # Extract the RTP header
+            frame_size = int.from_bytes(buffer[:4], byteorder='big')
+            if len(buffer) < frame_size + 12:
+                return None
+            frame = buffer[4:frame_size + 4]
+            del buffer[:frame_size + 12]
+            return frame
+        except Exception as e:
+            logger.error(f"Error extracting frame: {e}")
+            return None
 
 
     def updateMovie(self, data):
         """Update the video frame in the GUI from the byte buffer we received."""
         try:
+            logger.debug(f"Updating movie frame")
             # Descodificar el payload RTP i actualitzar la pantalla
             photo = ImageTk.PhotoImage(Image.open(io.BytesIO(data)))
+            logger.debug(f"Image size: {photo.width()} x {photo.height()}")
             self.movie.configure(image = photo, height=380)
             self.movie.photo_image = photo
+            self.text["text"] = f'Playing: Seq Num {self.num_seq} lost: {0} OK: {1}'
         except Exception as e:
             logger.error(f"Error updating movie frame: {e}")
 
