@@ -17,171 +17,161 @@ _program__ = "client.py"
 __version__ = '0.0.1'
 __author__ = 'Gerard Safont <gsc23@alumnes.udl.cat>'
 
+# Aquesta classe representa un client de streaming de vídeo que utilitza RTP i RTSP.
 class Client(object):
-        
-
     def __init__(self, options):
         """
-        Initialize a new VideoStreaming client.
+        Inicialitza un nou client de streaming de vídeo.
 
-        :param port: The port to connect to.
-        :param filename: The filename to ask for to connect to.
+        :param options: Opcions de configuració com el port, el fitxer i la destinació.
         """
-        self.num_seq = 0
-        logger.debug(f"Client created ")
+        self.num_seq = 0  # Número de seqüència RTSP.
+        logger.debug(f"Client creat")
         self.options = options
-        self.create_ui()
+        self.create_ui()  # Crear la interfície gràfica d'usuari.
         try:
+            # Crear un socket TCP per connectar-se al servidor.
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((self.options.destination, self.options.port))
-            logger.debug(f"client params filename: {self.options.filename}, port: {self.options.port}, host: {self.options.destination}")
+            logger.debug(f"Paràmetres del client: fitxer: {self.options.filename}, port: {self.options.port}, host: {self.options.destination}")
         except socket.error as e:
-            logger.error(f"Error connecting to server: {e}")
-            messagebox.showerror("Connection Error", f"Error connecting to server: {e}")
+            # Gestionar errors de connexió.
+            logger.error(f"Error connectant amb el servidor: {e}")
+            messagebox.showerror("Error de Connexió", f"Error connectant amb el servidor: {e}")
             return
-        print('Conected to server')
+        print('Connectat al servidor')
 
-        
     def create_ui(self):
         """
-        Create the user interface for the client. 
+        Crea la interfície gràfica d'usuari per al client.
 
-        This function creates the window for the client and its
-        buttons and labels. It also sets up the window to call the
-        close window function when the window is closed.
-
-        :returns: The root of the window.
+        Aquesta funció configura la finestra, els botons i les etiquetes.
         """
         self.root = Tk()
+        self.root.wm_title("RTP Client")  # Títol de la finestra.
+        self.root.protocol("WM_DELETE_WINDOW", self.ui_close_window)  # Acció en tancar la finestra.
 
-        # Set the window title
-        self.root.wm_title("RTP Client")
-
-        # On closing window go to close window function
-        self.root.protocol("WM_DELETE_WINDOW", self.ui_close_window)
-
-
-		# Create Buttons
+        # Crear botons per a les accions Setup i Play.
         self.setup = self._create_button("Setup", self.ui_setup_event, 0, 0)
         self.start = self._create_button("Play", self.ui_play_event, 0, 1)
-        # self.pause = self._create_button("Pause", self.ui_pause_event, 0, 2)
-        # self.teardown = self._create_button("Teardown", self.ui_teardown_event, 0, 3)
 
-        # Create a label to display the movie
+        # Crear una etiqueta per mostrar el vídeo.
         self.movie = Label(self.root, height=29)
-        self.movie.grid(row=1, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5) 
+        self.movie.grid(row=1, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
 
-        # Create a label to display text messages
+        # Crear una etiqueta per mostrar missatges de text.
         self.text = Label(self.root, height=3)
-        self.text.grid(row=2, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5) 
+        self.text.grid(row=2, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
 
         return self.root
-    
-    def _create_button(self, text, command, row=0, column=0, width=20, padx=3, pady=3 ):
-        """
-        Create a button widget with the given text, command, and layout options.
 
-        :param str text: The text to display on the button.
-        :param callable command: The function to call when the button is clicked.
-        :param int row: The row number of the button in the grid.
-        :param int column: The column number of the button in the grid.
-        :param int width: The width of the button.
-        :param int padx: The horizontal padding of the button.
-        :param int pady: The vertical padding of the button.
-        :return: The button widget.
+    def _create_button(self, text, command, row=0, column=0, width=20, padx=3, pady=3):
+        """
+        Crea un botó amb el text, la funció associada i les opcions de disseny especificades.
+
+        :param str text: Text del botó.
+        :param callable command: Funció a executar en fer clic.
+        :return: El widget del botó.
         """
         button = Button(self.root, width=width, padx=padx, pady=pady)
         button["text"] = text
         button["command"] = command
         button.grid(row=row, column=column, padx=2, pady=2)
         return button
-    
-    
+
     def ui_close_window(self):
         """
-        Close the window.
+        Tanca la finestra i atura el thread RTP.
         """
-        self.running = False  # Aturar el thread RTP
+        self.running = False  # Aturar el thread RTP.
         if hasattr(self, 'rtp_sock'):
-            self.rtp_sock.close()
-        self.root.destroy()
-        logger.debug("Window closed")
+            self.rtp_sock.close()  # Tancar el socket RTP.
+        self.root.destroy()  # Tancar la finestra.
+        logger.debug("Finestra tancada")
         sys.exit(0)
-
 
     def ui_setup_event(self):
         """
-        Handle the Setup button click event.
+        Gestiona l'esdeveniment del botó Setup.
         """
-        self.num_seq += 1
-       
-        
+        self.num_seq += 1  # Incrementar el número de seqüència RTSP.
         try:
+            # Obtenir l'IP i el port locals.
             local_ip, local_port = self.sock.getsockname()
-            
+
+            # Crear i enviar la petició SETUP al servidor.
             setup_request = f'SETUP {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\nTransport: RTP/UDP; client_port= {local_port}\r\n'
             self.sock.sendall(setup_request.encode())
             logger.debug(setup_request)
 
+            # Rebre la resposta del servidor.
             response = self.sock.recv(4096).decode()
-            logger.debug(f"Received response from server: {response}")
+            logger.debug(f"Resposta rebuda del servidor: {response}")
 
-            # Dividir la resposta en linies
+            # Processar la resposta per obtenir la sessió.
             lines = response.splitlines()
-
             for lin in lines:
                 if lin.startswith("Session:"):
                     self.session = lin.split(":")[1].strip()
-                    logger.debug(f"Session ID: {self.session}")
+                    logger.debug(f"ID de sessió: {self.session}")
                     break
 
             if "200 OK" in response:
-                logger.info("Setup successful")
+                # Configuració exitosa.
+                logger.info("Setup correcte")
                 try:
+                    # Crear i vincular el socket RTP.
                     self.rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                     self.rtp_sock.bind((local_ip, local_port))
-                    logger.debug(f"RTP socket create and bound to {local_ip}:{local_port}")
+                    logger.debug(f"Socket RTP creat i vinculat a {local_ip}:{local_port}")
                 except socket.error as e:
-                    logger.error(f"Error creating RTP socket: {e}")
-                    messagebox.showerror("Socket Error", f"Error creating RTP socket: {e}")
+                    logger.error(f"Error creant el socket RTP: {e}")
+                    messagebox.showerror("Error de Socket", f"Error creant el socket RTP: {e}")
                     return
                 self.running = True
+                # Iniciar un thread per rebre paquets RTP.
                 self.rtp_thread = threading.Thread(target=self.receive_rtp)
                 self.rtp_thread.start()
             else:
-                logger.error("Setup failed")
-                messagebox.showerror("Setup Error", "Setup failed. Please check the server.")
+                # Error en la configuració.
+                logger.error("Setup fallit")
+                messagebox.showerror("Error de Setup", "Setup fallit. Comprova el servidor.")
                 return
         except socket.error as e:
-            logger.error(f"Error connecting to server: {e}")
-            messagebox.showerror("Connection Error", f"Error connecting to server: {e}")
+            # Error de connexió amb el servidor.
+            logger.error(f"Error connectant amb el servidor: {e}")
+            messagebox.showerror("Error de Connexió", f"Error connectant amb el servidor: {e}")
             return
-        logger.debug("Setup button clicked")
-        self.text["text"] = "Setup button clicked"
-
+        logger.debug("Botó Setup clicat")
+        self.text["text"] = "Botó Setup clicat"
 
     def receive_rtp(self):
-        buffer = bytearray()
+        """
+        Rep paquets RTP i processa els frames de vídeo.
+        """
+        buffer = bytearray()  # Buffer per emmagatzemar dades rebudes.
         while self.running:
-            try: 
+            try:
+                # Rebre dades del socket RTP.
                 data, _ = self.rtp_sock.recvfrom(20480)
                 if data:
-                    logger.debug(f'Data: {data}')
-                    logger.debug(f"Received RTP packet of size {len(data)} bytes")
+                    logger.debug(f'Dades: {data}')
+                    logger.debug(f"Paquet RTP rebut de mida {len(data)} bytes")
                     buffer.extend(data)
-                    
+
+                    # Extreure un frame del buffer.
                     frame = self.extract_frame(buffer)
                     if frame:
-                        logger.debug(f"Extracted frame of size {len(frame)} bytes")
-                        self.updateMovie(frame)
+                        logger.debug(f"Frame extret de mida {len(frame)} bytes")
+                        self.updateMovie(frame)  # Actualitzar el vídeo a la GUI.
                 else:
-                    logger.warning("No data received from RTP socket")
+                    logger.warning("No s'han rebut dades del socket RTP")
             except socket.error as e:
-                logger.error(f"Error receiving data: {e}")
-                messagebox.showerror("Receive Error", f"Error receiving data: {e}")
+                # Error en rebre dades.
+                logger.error(f"Error rebent dades: {e}")
+                messagebox.showerror("Error de Recepció", f"Error rebent dades: {e}")
                 break
 
-    
     def ui_play_event(self):
         """
         Handle the Play button click event.
@@ -239,5 +229,5 @@ class Client(object):
         except Exception as e:
             logger.error(f"Error updating movie frame: {e}")
 
-        
+
 
