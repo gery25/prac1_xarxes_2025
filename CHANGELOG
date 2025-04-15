@@ -1,0 +1,34 @@
+
+# Change Log
+All notable changes to this project will be documented in this file.
+ 
+The format is based on [Keep a Changelog](http://keepachangelog.com/)
+and this project adheres to [Semantic Versioning](http://semver.org/).
+ 
+ 
+## [0.1.1] - 2025-03-17
+  
+Drop-in replacement
+ 
+### Added
+ 
+### Changed
+  
+- Modified debug flags on command line. Now defaults and file logging are similar to
+  the one on the provided skeleton. Command line flags have been updated accordingly.
+
+- Modified message on client when it cannot connect on startup to make it more clear
+  (adding server IP address and port on message).
+
+- Added server default address (127.0.0.1) on client if not provided on command line.
+
+- Added retry loop for connecting to server on client if client cannot connect on startup.
+
+- Better messages and handling on client SETUP on non 200 status. Now shows the error 
+  message on screen.
+
+### Fixed
+ 
+- Fixed ensuring that the client resets sequence number and session ID after 
+  Teardown message. 
+ 
