@@ -107,6 +107,6 @@ def client(ctx, videofile, port, destination):
     port (default is 4321).
     """
     logger.info("Client xarxes 2025 video streaming")
-    options = optparse.Values({"destination": destination, "port": port, "filename": videofile, "server_ip": destination, "server_port": port})
+    options = optparse.Values({"destination": destination, "port": port, "filename": videofile})
     client = Client(options)
     client.root.mainloop()

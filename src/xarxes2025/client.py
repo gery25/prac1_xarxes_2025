@@ -1,4 +1,4 @@
-import sys, optparse
+import sys, optparse, threading
 
 from tkinter import Tk, Label, Button, W, E, N, S
 from tkinter import messagebox
@@ -93,6 +93,9 @@ class Client(object):
         """
         Close the window.
         """
+        self.running = False  # Aturar el thread RTP
+        if hasattr(self, 'rtp_sock'):
+            self.rtp_sock.close()
         self.root.destroy()
         logger.debug("Window closed")
         sys.exit(0)
@@ -115,28 +118,53 @@ class Client(object):
             local_ip, local_port = sock.getsockname()
             
             sock.sendall(f'SETUP {self.options.filename} RTP/1.0\nCseq: {num_seq}\nTransport: RTP/UDP; client_port= {local_port}'.encode())
-           
             logger.debug(f"Sent SETUP request to server {self.options.destination}:{self.options.port}")
+            response = sock.recv(self.options.port).decode()
+            logger.debug(f"Received response from server: {response}")
+
+            if "200 OK" in response:
+                logger.info("Setup successful")
+
+                self.rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self.rtp_sock.bind((local_ip, local_port))
+                logger.debug(f"RTP socket create and bound to {local_ip}:{local_port}")
+
+                self.running = True
+                self.rtp_thread = threading.Thread(target=self.receive_rtp)
+                self.rtp_thread.start()
+            else:
+                logger.error("Setup failed")
+                messagebox.showerror("Setup Error", "Setup failed. Please check the server.")
+                return
         except socket.error as e:
             logger.error(f"Error connecting to server: {e}")
             messagebox.showerror("Connection Error", f"Error connecting to server: {e}")
             return
         logger.debug("Setup button clicked")
         self.text["text"] = "Setup button clicked"
-        self.updateMovie(None)
+
+
+    def receive_rtp(self):
+        while self.running:
+            try: 
+                data, _ = self.rtp_sock.recvfrom(self.options.port)
+                logger.debug(f"Received RTP packet from server")
+                self.updateMovie(data)
+            except socket.error as e:
+                logger.error(f"Error receiving data: {e}")
+                messagebox.showerror("Receive Error", f"Error receiving data: {e}")
+                break
 
 
     def updateMovie(self, data):
         """Update the video frame in the GUI from the byte buffer we received."""
+        try:
+            # Descodificar el payload RTP i actualitzar la pantalla
+            photo = ImageTk.PhotoImage(Image.open(io.BytesIO(data)))
+            self.movie.configure(image = photo, height=380)
+            self.movie.photo_image = photo
+        except Exception as e:
+            logger.error(f"Error updating movie frame: {e}")
 
-        # data hauria de tenir el payload de la imatge extreta del paquet RTP
-        # Com no en teniu, encara, us poso un exemple de com carregar una imatge
-        # des del disc dur. Això ho haureu de canviar per carregar la imatge
-        # des del buffer de bytes que rebem del servidor.
-        # photo = ImageTk.PhotoImage(Image.open(io.BytesIO(data)))
-
-
-        photo = ImageTk.PhotoImage(Image.open('rick.webp'))
-        self.movie.configure(image = photo, height=380) 
-        self.movie.photo_image = photo
+        
 
