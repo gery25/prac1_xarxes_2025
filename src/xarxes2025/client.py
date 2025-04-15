@@ -1,4 +1,4 @@
-import sys 
+import sys, optparse
 
 from tkinter import Tk, Label, Button, W, E, N, S
 from tkinter import messagebox
@@ -10,6 +10,13 @@ from loguru import logger
 from PIL import Image, ImageTk
 import io
 
+import socket
+from state_machine import State_machine
+
+_program__ = "client.py"
+__version__ = '0.0.1'
+__author__ = 'Gerard Safont <gsc23@alumnes.udl.cat>'
+
 class Client(object):
     def __init__(self, port):       
         """
@@ -20,9 +27,10 @@ class Client(object):
         """
 
         
-    def __init__(self, server_port, filename):
+    def __init__(self, options):
         logger.debug(f"Client created ")
-        self.server_port = server_port
+    
+        self.options = options
         self.create_ui()
 
         
@@ -94,6 +102,25 @@ class Client(object):
         """
         Handle the Setup button click event.
         """
+        global sock
+        num_seq = 1
+       
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        try:
+            sock.connect((self.options.destination, self.options.port))
+            logger.debug(f"Connected to server {self.options.destination}:{self.options.port}")
+
+            local_ip, local_port = sock.getsockname()
+            
+            sock.sendall(f'SETUP {self.options.filename} RTP/1.0\nCseq: {num_seq}\nTransport: RTP/UDP; client_port= {local_port}'.encode())
+           
+            logger.debug(f"Sent SETUP request to server {self.options.destination}:{self.options.port}")
+        except socket.error as e:
+            logger.error(f"Error connecting to server: {e}")
+            messagebox.showerror("Connection Error", f"Error connecting to server: {e}")
+            return
         logger.debug("Setup button clicked")
         self.text["text"] = "Setup button clicked"
         self.updateMovie(None)
@@ -112,3 +139,4 @@ class Client(object):
         photo = ImageTk.PhotoImage(Image.open('rick.webp'))
         self.movie.configure(image = photo, height=380) 
         self.movie.photo_image = photo
+

@@ -1,4 +1,4 @@
-class state_machine :
+class State_machine :
     def __init__(self):
         #estat inicial
         self.state = "INIT"

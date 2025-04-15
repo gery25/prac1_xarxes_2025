@@ -1,4 +1,4 @@
-from xarxes2025.cli import cli
+from cli import cli
 
 
 

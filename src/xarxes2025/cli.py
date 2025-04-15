@@ -1,12 +1,12 @@
 import click
-import sys 
+import sys , optparse
 
 
 from loguru import logger
 
 
-from xarxes2025.server import Server
-from xarxes2025.client import Client
+from server import Server
+from client import Client
 
 
 @click.group()
@@ -92,7 +92,13 @@ def server(ctx, port):
     show_default=True,
     type=int
 )
-def client(ctx, videofile, port):
+@click.option(
+    "-d",
+    "--destination",
+    help="RTSP server destination IP address",
+    default="127.0.0.1"
+)
+def client(ctx, videofile, port, destination):
     """
     Start an RTSP client streaming video.
 
@@ -101,5 +107,6 @@ def client(ctx, videofile, port):
     port (default is 4321).
     """
     logger.info("Client xarxes 2025 video streaming")
-    client = Client(port, videofile)
+    options = optparse.Values({"destination": destination, "port": port, "filename": videofile, "server_ip": destination, "server_port": port})
+    client = Client(options)
     client.root.mainloop()
