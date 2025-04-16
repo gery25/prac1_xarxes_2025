@@ -1,5 +1,5 @@
 from time import time
-
+import random
     
 class UDPDatagram:	
     HEADER_SIZE = 12
@@ -27,17 +27,19 @@ class UDPDatagram:
 
         # Bytes 4-7 are for the timestamp, in our case, the time() as an int. Its your task to
         # fill this in.
-        header[4] = 
-        header[5] = 
-        header[6] = 
-        header[7] = 
+        timestamp = int(time() * 90000)
+        header[4] = (timestamp >> 24) & 255 #upper bits
+        header[5] = (timestamp >> 16) & 255
+        header[6] = (timestamp >> 8) & 255
+        header[7] = timestamp & 255
 
         # Bytes 8-11 are for the SSRC, in our case, 0. Its your task to
         # fill this in.
-        header[8] = 
-        header[9] = 
-        header[10] = 
-        header[11] = 
+        ssrc = random.randint(0, 2**32 - 1)
+        header[8] = (ssrc >> 24) &255
+        header[9] = (ssrc >> 16) & 255
+        header[10] = (ssrc >> 8) & 255
+        header[11] = ssrc & 255
         
         self.header = header
         

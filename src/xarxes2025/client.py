@@ -1,10 +1,10 @@
-import sys, optparse, threading
-
+import sys, optparse, threading, time
+from PIL import ImageFile
 from tkinter import Tk, Label, Button, W, E, N, S
 from tkinter import messagebox
 import tkinter as tk
 
-
+from udpdatagram import UDPDatagram
 from loguru import logger
 
 from PIL import Image, ImageTk
@@ -54,6 +54,8 @@ class Client(object):
         # Crear botons per a les accions Setup i Play.
         self.setup = self._create_button("Setup", self.ui_setup_event, 0, 0)
         self.start = self._create_button("Play", self.ui_play_event, 0, 1)
+        self.pause = self._create_button("Pause", self.ui_pause_event, 0, 2)
+        # self.teardown = self._create_button("Teardown", self.ui_teardown_event, 0, 3)
 
         # Crear una etiqueta per mostrar el vídeo.
         self.movie = Label(self.root, height=29)
@@ -126,7 +128,6 @@ class Client(object):
                     logger.debug(f"Socket RTP creat i vinculat a {local_ip}:{local_port}")
                 except socket.error as e:
                     logger.error(f"Error creant el socket RTP: {e}")
-                    messagebox.showerror("Error de Socket", f"Error creant el socket RTP: {e}")
                     return
                 self.running = True
                 # Iniciar un thread per rebre paquets RTP.
@@ -135,12 +136,10 @@ class Client(object):
             else:
                 # Error en la configuració.
                 logger.error("Setup fallit")
-                messagebox.showerror("Error de Setup", "Setup fallit. Comprova el servidor.")
                 return
         except socket.error as e:
             # Error de connexió amb el servidor.
             logger.error(f"Error connectant amb el servidor: {e}")
-            messagebox.showerror("Error de Connexió", f"Error connectant amb el servidor: {e}")
             return
         logger.debug("Botó Setup clicat")
         self.text["text"] = "Botó Setup clicat"
@@ -149,28 +148,59 @@ class Client(object):
         """
         Rep paquets RTP i processa els frames de vídeo.
         """
-        buffer = bytearray()  # Buffer per emmagatzemar dades rebudes.
+
+        initial_timestamp = None
+        start_time =  None
+        
         while self.running:
             try:
                 # Rebre dades del socket RTP.
-                data, _ = self.rtp_sock.recvfrom(20480)
-                if data:
-                    logger.debug(f'Dades: {data}')
-                    logger.debug(f"Paquet RTP rebut de mida {len(data)} bytes")
-                    buffer.extend(data)
+                data, _ = self.rtp_sock.recvfrom(65535)
+               
+                datagram = UDPDatagram(0,b"")
+                datagram.decode(data)
 
-                    # Extreure un frame del buffer.
-                    frame = self.extract_frame(buffer)
-                    if frame:
-                        logger.debug(f"Frame extret de mida {len(frame)} bytes")
-                        self.updateMovie(frame)  # Actualitzar el vídeo a la GUI.
-                else:
-                    logger.warning("No s'han rebut dades del socket RTP")
+                timestamp = datagram.timestamp()
+
+                if initial_timestamp is None:
+                    initial_timestamp = timestamp
+                    start_time = time.time()
+                
+
+                delay = (timestamp - initial_timestamp) / 90000.0
+                target_time = start_time + delay
+
+                current_time = time.time()
+                slep_time = target_time - current_time
+                if slep_time > 0:
+                    time.sleep(slep_time)
+                    logger.debug(f"Sleeping for {slep_time} seconds")
+
+
+                payload = datagram.get_payload()
+                buffer = bytearray()
+                buffer.extend(payload)
+                try:
+                    Image.open(io.BytesIO(payload)).verify()  # Verifica si el payload és un JPEG vàlid
+                except Exception as e:
+                    logger.error(f"Payload rebut no és un JPEG vàlid: {e}")
+                    return
+                try:
+                    Image.open(io.BytesIO(buffer)).verify()
+                    logger.debug("Image verified successfully")
+                    self.updateMovie(buffer)
+                    buffer.clear()
+                except Exception as e:
+                    logger.error(f"Error verifying image: {e}")
+                    continue
+                    
+                logger.debug(f"Frame extret de mida {len(payload)} bytes")
+                self.text["text"] = f'Playing: Seq Num {self.num_seq} lost: {0} OK: {1}'
             except socket.error as e:
                 # Error en rebre dades.
                 logger.error(f"Error rebent dades: {e}")
-                messagebox.showerror("Error de Recepció", f"Error rebent dades: {e}")
                 break
+
 
     def ui_play_event(self):
         """
@@ -185,7 +215,6 @@ class Client(object):
         logger.debug(f"Received response from server: {response}")
 
         if "200 OK" in response:
-            
 
             self.running = True
             self.rtp_thread = threading.Thread(target=self.receive_rtp)
@@ -196,26 +225,9 @@ class Client(object):
 
         else:
             logger.error("Play failed")
-            messagebox.showerror("Play Error", "Play failed. Please check the server.")
             return
         
-
-    def extract_frame(self, buffer):
-        try:
-            if len(buffer) < 12:
-               return None
-            # Extract the RTP header
-            frame_size = int.from_bytes(buffer[:4], byteorder='big')
-            if len(buffer) < frame_size + 12:
-                return None
-            frame = buffer[4:frame_size + 4]
-            del buffer[:frame_size + 12]
-            return frame
-        except Exception as e:
-            logger.error(f"Error extracting frame: {e}")
-            return None
-
-
+    
     def updateMovie(self, data):
         """Update the video frame in the GUI from the byte buffer we received."""
         try:
@@ -225,9 +237,10 @@ class Client(object):
             logger.debug(f"Image size: {photo.width()} x {photo.height()}")
             self.movie.configure(image = photo, height=380)
             self.movie.photo_image = photo
-            self.text["text"] = f'Playing: Seq Num {self.num_seq} lost: {0} OK: {1}'
+            
         except Exception as e:
             logger.error(f"Error updating movie frame: {e}")
 
+    
 
 
