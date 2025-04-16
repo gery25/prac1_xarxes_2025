@@ -195,7 +195,8 @@ class Client(object):
                     continue
                     
                 logger.debug(f"Frame extret de mida {len(payload)} bytes")
-                self.text["text"] = f'Playing: Seq Num {self.num_seq} lost: {0} OK: {1}'
+                logger.debug(f"Seq num: {datagram.get_seqnum()}")
+                self.text["text"] = f'Playing: Seq Num {datagram.get_seqnum()} lost: {0} OK: {1}'
             except socket.error as e:
                 # Error en rebre dades.
                 logger.error(f"Error rebent dades: {e}")
@@ -241,6 +242,19 @@ class Client(object):
         except Exception as e:
             logger.error(f"Error updating movie frame: {e}")
 
-    
+    def ui_pause_event(self):
+        self.num_seq += 1
+        pause_request = f'PAUSE {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n'
+        self.sock.sendall(pause_request.encode())
+        logger.debug(pause_request)
 
+        response = self.sock.recv(4096).decode()
+        logger.debug(f"Received response from server: {response}")
+        if "200 OK" in response:
+            self.ruunning = False
+            logger.info("Pause successful")
+            self.text["text"] = "Pause button clicked"
+        else:
+            logger.error("Pause failed")
+            return
 
