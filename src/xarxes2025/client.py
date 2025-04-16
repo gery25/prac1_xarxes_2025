@@ -55,7 +55,7 @@ class Client(object):
         self.setup = self._create_button("Setup", self.ui_setup_event, 0, 0)
         self.start = self._create_button("Play", self.ui_play_event, 0, 1)
         self.pause = self._create_button("Pause", self.ui_pause_event, 0, 2)
-        # self.teardown = self._create_button("Teardown", self.ui_teardown_event, 0, 3)
+        self.teardown = self._create_button("Teardown", self.ui_teardown_event, 0, 3)
 
         # Crear una etiqueta per mostrar el vídeo.
         self.movie = Label(self.root, height=29)
@@ -123,6 +123,7 @@ class Client(object):
                 logger.info("Setup correcte")
                 try:
                     # Crear i vincular el socket RTP.
+                    logger.debug(f"Socket RTP creat i vinculat a {local_ip}:{local_port}")
                     self.rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                     self.rtp_sock.bind((local_ip, local_port))
                     logger.debug(f"Socket RTP creat i vinculat a {local_ip}:{local_port}")
@@ -172,19 +173,22 @@ class Client(object):
 
                 current_time = time.time()
                 slep_time = target_time - current_time
+
                 if slep_time > 0:
                     time.sleep(slep_time)
                     logger.debug(f"Sleeping for {slep_time} seconds")
 
-
                 payload = datagram.get_payload()
+
                 buffer = bytearray()
                 buffer.extend(payload)
+
                 try:
                     Image.open(io.BytesIO(payload)).verify()  # Verifica si el payload és un JPEG vàlid
                 except Exception as e:
                     logger.error(f"Payload rebut no és un JPEG vàlid: {e}")
                     return
+                
                 try:
                     Image.open(io.BytesIO(buffer)).verify()
                     logger.debug("Image verified successfully")
@@ -216,14 +220,11 @@ class Client(object):
         logger.debug(f"Received response from server: {response}")
 
         if "200 OK" in response:
-
             self.running = True
             self.rtp_thread = threading.Thread(target=self.receive_rtp)
             self.rtp_thread.start()
-
             logger.info("Play successful")
             self.text["text"] = "Play button clicked"
-
         else:
             logger.error("Play failed")
             return
@@ -238,7 +239,6 @@ class Client(object):
             logger.debug(f"Image size: {photo.width()} x {photo.height()}")
             self.movie.configure(image = photo, height=380)
             self.movie.photo_image = photo
-            
         except Exception as e:
             logger.error(f"Error updating movie frame: {e}")
 
@@ -258,3 +258,17 @@ class Client(object):
             logger.error("Pause failed")
             return
 
+    def ui_teardown_event(self):
+        self.num_seq += 1 
+        teardown_request = f'TEARDOWN {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n'
+        self.sock.sendall(teardown_request.encode())
+        logger.debug(teardown_request)
+        response = self.sock.recv(4096).decode()
+        logger.debug(f"Received response from server: {response}")
+        if "200 OK" in response:
+            self.rtp_sock.close() # tancar el socket UDP
+            self.running = False
+            
+        else:
+            logger.error("Teardown failed")
+            return
