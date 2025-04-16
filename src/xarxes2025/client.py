@@ -11,7 +11,6 @@ from PIL import Image, ImageTk
 import io
 
 import socket
-from state_machine import State_machine
 
 _program__ = "client.py"
 __version__ = '0.0.1'
@@ -266,7 +265,13 @@ class Client(object):
         response = self.sock.recv(4096).decode()
         logger.debug(f"Received response from server: {response}")
         if "200 OK" in response:
+            
+            self.running = False
+
             self.rtp_sock.close() # tancar el socket UDP
+
+            self.num_seq = 0
+            self.session = None
             self.running = False
             
         else:
