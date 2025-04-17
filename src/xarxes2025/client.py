@@ -11,6 +11,7 @@ from PIL import Image, ImageTk
 import io
 
 import socket
+from state_machine import State_machine
 
 _program__ = "client.py"
 __version__ = '0.0.1'
@@ -25,7 +26,8 @@ class Client(object):
         :param options: Opcions de configuració com el port, el fitxer i la destinació.
         """
         self.num_seq = 0  # Número de seqüència RTSP.
-        logger.debug(f"Client creat")
+        self.state = State_machine()  # Inicialitza la màquina d'estats.
+        logger.debug(f"Client creat amb estat inicial: {self.state.get_state()}")
         self.options = options
         try:
             # Crear un socket TCP per connectar-se al servidor.
@@ -96,6 +98,10 @@ class Client(object):
         """
         Gestiona l'esdeveniment del botó Setup.
         """
+        if self.state.get_state() != "INIT":
+            logger.error("El client no està en estat INIT. No es pot fer SETUP.")
+            return
+
         self.num_seq += 1  # Incrementar el número de seqüència RTSP.
         try:
             # Obtenir l'IP i el port locals.
@@ -130,16 +136,16 @@ class Client(object):
                 except socket.error as e:
                     logger.error(f"Error creant el socket RTP: {e}")
                     return
-                self.running = True
-                # Iniciar un thread per rebre paquets RTP.
-                self.rtp_thread = threading.Thread(target=self.receive_rtp)
-                self.rtp_thread.start()
+
+                # Canviar l'estat a READY
+                if self.state.transition("SETUP"):
+                    logger.debug(f"Estat canviat a: {self.state.get_state()}")
+                else:
+                    logger.error("Error canviant l'estat a READY.")
             else:
-                # Error en la configuració.
                 logger.error("Setup fallit")
                 return
         except socket.error as e:
-            # Error de connexió amb el servidor.
             logger.error(f"Error connectant amb el servidor: {e}")
             return
         logger.debug("Botó Setup clicat")
@@ -209,24 +215,34 @@ class Client(object):
 
     def ui_play_event(self):
         """
-        Handle the Play button click event.
+        Gestiona l'esdeveniment del botó Play.
         """
+        if self.state.get_state() != "READY":
+            logger.error("El client no està en estat READY. No es pot fer PLAY.")
+            return
+
         self.num_seq += 1
         play_request = f'PLAY {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n'
         self.sock.sendall(play_request.encode())
         logger.debug(play_request)
 
         response = self.sock.recv(4096).decode()
-        logger.debug(f"Received response from server: {response}")
+        logger.debug(f"Resposta rebuda del servidor: {response}")
 
         if "200 OK" in response:
             self.running = True
             self.rtp_thread = threading.Thread(target=self.receive_rtp)
             self.rtp_thread.start()
-            logger.info("Play successful")
+
+            # Canviar l'estat a PLAYING
+            if self.state.transition("PLAY"):
+                logger.debug(f"Estat canviat a: {self.state.get_state()}")
+            else:
+                logger.error("Error canviant l'estat a PLAYING.")
+            logger.info("Play correcte")
             self.text["text"] = "Play button clicked"
         else:
-            logger.error("Play failed")
+            logger.error("Play fallit")
             return
         
     
