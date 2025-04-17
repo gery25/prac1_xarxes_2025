@@ -1,9 +1,9 @@
 from loguru import logger
 from state_machine import State_machine
-import socket, select
+import socket, select, threading
 import random
-# from xarxes2025.udpdatagram import UDPDatagram
-# from xarxes2025.videoprocessor import VideoProcessor
+from udpdatagram import UDPDatagram
+from videoprocessor import VideoProcessor
 
 
 class Server(object):
@@ -16,7 +16,7 @@ class Server(object):
         """
         self.insocks = []
         self.outsocks = []
-        self.address = {}
+        self.addres = {}
         self.port = port
         self.num_seq = 0
         self.client_port_udp = None
@@ -35,14 +35,14 @@ class Server(object):
         try:
             while True:
                 i,o,e = select.select(self.insocks, self.outsocks, [])
-                for x in i:
-                    if x is self.sock: # una nova conexio
+                for self.x in i:
+                    if self.x is self.sock: # una nova conexio
                         newsocket, addr = self.sock.accept()
                         logger.debug(f"New connection from {addr}")
                         self.insocks.append(newsocket)
-                        self.address[newsocket] = addr
+                        self.addres[newsocket] = addr
                     else:
-                        newdata = x.recv(1024).decode()
+                        newdata = self.x.recv(1024).decode()
                         if newdata:
                             lines = newdata.splitlines()
                             # noves dades
@@ -53,32 +53,35 @@ class Server(object):
                                             self.state.transition("SETUP")
                                             logger.debug(f"SETUP command received")
 
-                                            self.funcion_setup(newdata)
+                                            self.funcion_setup(newdata, self.x)
 
                                             setup_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            x.sendall(setup_response.encode())
-                                            if x not in self.outsocks:
-                                                self.outsocks.append(x)
+                                            self.x.sendall(setup_response.encode())
+                                            if self.x not in self.outsocks:
+                                                self.outsocks.append(self.x)
                                         except Exception as e:
                                             logger.error(f"Error in SETUP command: {e}")
-                                            x.sendall(b"RTSP/1.0 500 Internal Server Error\r\n")
+                                            self.x.sendall(b"RTSP/1.0 500 Internal Server Error\r\n")
                                     else:
                                         logger.error(f"Error in SETUP command: {e}")
-                                        x.send(f"RTSP/1.0 500 Internal Server Error\r\n")      
+                                        self.x.send(f"RTSP/1.0 500 Internal Server Error\r\n".encode())      
                                     break
                                 elif line.startswith("PLAY"):
                                     if self.state.get_state() == "READY":
                                         try:
                                             self.state.transition("PLAY")
                                             logger.debug(f"PLAY command received")
-
-                                            self.funcion_play()
+                                            
+                                            self.funcion_play(newdata)
 
                                             play_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            x.sendall(play_response.encode())
+                                            self.x.sendall(play_response.encode())
+                                            self.running = True
+                                            self.rtp_thread = threading.Thread(target=self.play_video(self.x))
+                                            self.rtp_thread.start()
                                         except Exception as e:
                                             logger.debug(f"Error in PLAY command: {e}")
-                                            x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
+                                            self.x.send(f"RTSP/1.0 500 Internal Server Error\r\n".encode())
                                     break
                                 elif line.startswith("PAUSE"):
                                     if self.state.get_state() == "PLAYING":
@@ -89,10 +92,10 @@ class Server(object):
                                             self.funcion_pause()
 
                                             pause_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            x.sendall(pause_response.encode())
+                                            self.x.sendall(pause_response.encode())
                                         except Exception as e:
                                             logger.debug(f"Error in PAUSE command: {e}")
-                                            x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
+                                            self.x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
                                     break
                                 elif line.startswith("TEARDOWN"):
                                     if self.state.get_state() in ["READY", "PLAYING"]:
@@ -103,30 +106,30 @@ class Server(object):
                                             self.funcion_teardown()
 
                                             teardown_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            x.sendall(teardown_response.encode())
-                                            self.insocks.remove(x)
-                                            x.close()
+                                            self.x.sendall(teardown_response.encode())
+                                            self.insocks.remove(self.x)
+                                            self.x.close()
                                         except Exception as e:
                                             logger.debug(f"Error in TEARDOWN command: {e}")
-                                            x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
+                                            self.x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
                                     break
                                 else:
                                     logger.debug(f"Unknown command {newdata}")
                                     break
                         else:
                             #desconexio
-                            logger.debug(f"Connection closed by {self.address[x]}")
-                            del self.address[x]
-                            try: self.outsocks.remove(x)
+                            logger.debug(f"Connection closed by {self.addres[self.x]}")
+                            del self.addres[self.x]
+                            try: self.outsocks.remove(self.x)
                             except ValueError: pass
-                            self.insocks.remove(x)
-                            x.close()
+                            self.insocks.remove(self.x)
+                            self.x.close()
         finally:
             self.sock.close()
 
 
 
-    def funcion_setup(self, data):
+    def funcion_setup(self, data, x):
 
         lines = str(data).splitlines()
         for line in lines:
@@ -141,8 +144,16 @@ class Server(object):
                 line = line.split(" ")
                 self.client_port_udp = line[-1] 
                 logger.debug(f"Port UDP: {self.client_port_udp}")
+
         logger.debug(f'num_seq: {self.num_seq} filename: {self.filename} UDPport {self.client_port_udp}')
         self.session = self.generar_id_session()
+        self.video = VideoProcessor(self.filename)
+        logger.debug(f'before creat upd socket')
+        self.socketudp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        logger.debug(f'after creat upd socket') 
+        logger.debug(f'before send udp frame in setup')
+        self.send_udp_frame(x)
+        logger.debug(f'after send udp frame in setup')
 
     def generar_id_session(self):
         prefix = "XARXES_"
@@ -154,15 +165,33 @@ class Server(object):
 
 
 
-    def funcion_play(self):
+    def funcion_play(self, data):
         """
         Function to handle the PLAY command.
         """
-        logger.debug("Playing video stream")
+        
+        lines = str(data).splitlines()
+        for line in lines:
+            if line.startswith("PLAY"):
+                line = line.split(" ")
+                self.filename = line[1]
+                logger.debug(f"Nom del fitxer: {self.filename}")
+            elif line.startswith("CSeq:"):
+                self.num_seq = line.split(" ")[1]
+                logger.debug(f"CSeq: {self.num_seq}")
+            elif line.startswith("Session:"):
+                line = line.split(" ")
+                self.session = line[-1] 
+                logger.debug(f"Session: {self.session}")
+
         # Here you would start sending the video frames over UDP
         # You will need to implement the send_udp_frame method
         # self.send_udp_frame()
 
+    def play_video(self, x):
+        
+        while self.running:
+            self.send_udp_frame(x)
 
     def funcion_pause(self):
         """
@@ -180,32 +209,24 @@ class Server(object):
         # Here you would stop the video streaming
         # You will need to implement the teardown functionality
 
-
-
-
-
-
-
-
-
     # # 
     # # This is not complete code, it's just an skeleton to help you get started.
     # # You will need to use these snippets to do the code.
     # # 
     # #     
-    # def send_udp_frame(self):
+    def send_udp_frame(self,x):
       
-    #     # This snippet reads from self.video (a VideoProcessor object) and prepares 
-    #     # the frame to be sent over UDP. 
+        # This snippet reads from self.video (a VideoProcessor object) and prepares 
+        # the frame to be sent over UDP. 
 
-    #     data = self.video.next_frame()
-    #     if data:
-    #         if len(data)>0:
-    #                 frame_number = self.get_frame_number()
-    #                 # create UDP Datagram
+        data = self.video.next_frame()
+        if data:
+            if len(data)>0:
+                self.frame_number = self.video.get_frame_number()
+                # create UDP Datagram
 
-    #                 udp_datagram = UDPDatagram(frame_number, data).get_datagram()
+                udp_datagram = UDPDatagram(self.frame_number, data).get_datagram()
 
-    #                 # send UDP Datagram
-    #                 socketudp.sendto(udp_datagram, (address, port))
+                # send UDP Datagram
+                self.socketudp.sendto(udp_datagram, (self.addres[x][0], int(self.client_port_udp)))
                         
