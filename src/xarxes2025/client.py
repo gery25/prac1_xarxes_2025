@@ -27,7 +27,6 @@ class Client(object):
         self.num_seq = 0  # Número de seqüència RTSP.
         logger.debug(f"Client creat")
         self.options = options
-        self.create_ui()  # Crear la interfície gràfica d'usuari.
         try:
             # Crear un socket TCP per connectar-se al servidor.
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -38,6 +37,8 @@ class Client(object):
             logger.error(f"Error connectant amb el servidor: {e}")
             messagebox.showerror("Error de Connexió", f"Error connectant amb el servidor: {e}")
             return
+            
+        self.create_ui()  # Crear la interfície gràfica d'usuari.
         print('Connectat al servidor')
 
     def create_ui(self):
@@ -111,9 +112,9 @@ class Client(object):
 
             # Processar la resposta per obtenir la sessió.
             lines = response.splitlines()
-            for lin in lines:
-                if lin.startswith("Session:"):
-                    self.session = lin.split(":")[1].strip()
+            for line in lines:
+                if line.startswith("Session:"):
+                    self.session = line.split(":")[1].strip()
                     logger.debug(f"ID de sessió: {self.session}")
                     break
 
