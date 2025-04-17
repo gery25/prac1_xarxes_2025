@@ -34,106 +34,134 @@ class Server(object):
     def main(self):
         try:
             while True:
-                i,o,e = select.select(self.insocks, self.outsocks, [])
+                i, o, e = select.select(self.insocks, self.outsocks, [])
                 for x in i:
-                    if x is self.sock: # una nova conexio
+                    if x is self.sock:  # Una nova connexió
                         newsocket, addr = self.sock.accept()
                         logger.debug(f"New connection from {addr}")
                         self.insocks.append(newsocket)
                         self.addres[newsocket] = addr
+
+                        # Crear un thread per gestionar aquest client
+                        client_thread = threading.Thread(target=self.handle_client, args=(newsocket,))
+                        client_thread.start()
                     else:
+                        # Processar dades d'un client existent
                         newdata = x.recv(1024).decode()
-                        logger.debug(f'recive: {newdata}')
                         if newdata:
-                            lines = newdata.splitlines()
-                            # noves dades
-                            for line in lines:
-                                if line.startswith("SETUP"):
-                                    if self.state.get_state() == "INIT":
-                                        try:
-                                            self.state.transition("SETUP")
-                                            logger.debug(f"SETUP command received")
-
-                                            self.funcion_setup(newdata, x)
-
-                                            setup_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            x.sendall(setup_response.encode())
-                                            logger.debug(setup_response)
-                                            if x not in self.outsocks:
-                                                self.outsocks.append(x)
-                                        except Exception as e:
-                                            logger.error(f"Error in SETUP command: {e}")
-                                            x.sendall(b"RTSP/1.0 500 Internal Server Error\r\n")
-                                    else:
-                                        logger.error(f"Error in SETUP command: {e}")
-                                        x.send(f"RTSP/1.0 500 Internal Server Error\r\n".encode())      
-                                    break
-                                elif line.startswith("PLAY"):
-                                    if self.state.get_state() == "READY":
-                                        try:
-                                            self.state.transition("PLAY")
-                                            logger.debug(f"PLAY command received")
-                                            
-                                            self.funcion_play(newdata)
-
-                                            play_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            x.sendall(play_response.encode())
-                                            logger.debug(play_response)
-                                            
-                                            self.play_video_thread = threading.Thread(target=self.play_video, args=(x,))
-                                            self.play_video_thread.start()
-                                            logger.debug(f'send hola')
-                                        except Exception as e:
-                                            logger.debug(f"Error in PLAY command: {e}")
-                                            x.send(f"RTSP/1.0 500 Internal Server Error\r\n".encode())
-                                    break
-                                elif line.startswith("PAUSE"):
-                                    if self.state.get_state() == "PLAYING":
-                                        try:
-                                            self.state.transition("PAUSE")
-                                            logger.debug(f"PAUSE command received")
-
-                                            self.funcion_pause(newdata)
-
-                                            pause_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            x.sendall(pause_response.encode())
-                                            logger.debug(pause_response)
-                                            self.running = False
-                                        except Exception as e:
-                                            logger.debug(f"Error in PAUSE command: {e}")
-                                            x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
-                                    break
-                                elif line.startswith("TEARDOWN"):
-                                    if self.state.get_state() in ["READY", "PLAYING"]:
-                                        try:
-                                            self.state.transition("TEARDOWN")
-                                            logger.debug(f"TEARDOWN command received")
-
-                                            self.funcion_teardown(newdata)
-
-                                            teardown_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            x.sendall(teardown_response.encode())
-                                            
-                                            self.break_conection()
-                                        except Exception as e:
-                                            logger.debug(f"Error in TEARDOWN command: {e}")
-                                            x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
-                                    break
-                                else:
-                                    logger.debug(f"Unknown command {newdata}")
-                                    break
+                            self.handle_request(newdata, x)
                         else:
-                            #desconexio
+                            # Desconnexió del client
                             logger.debug(f"Connection closed by {self.addres[x]}")
                             del self.addres[x]
-                            try: self.outsocks.remove(x)
-                            except ValueError: pass
+                            try:
+                                self.outsocks.remove(x)
+                            except ValueError:
+                                pass
                             self.insocks.remove(x)
                             x.close()
         finally:
             self.sock.close()
 
+    def handle_client(self, client_socket):
+        while True:
+            try:
+                data = client_socket.recv(1024).decode()
+                if data:
+                    self.handle_request(data, client_socket)
+                else:
+                    logger.debug(f"Connection closed by {self.addres[client_socket]}")
+                    del self.addres[client_socket]
+                    try:
+                        self.outsocks.remove(client_socket)
+                    except ValueError:
+                        pass
+                    self.insocks.remove(client_socket)
+                    client_socket.close()
+                    break
+            except Exception as e:
+                logger.error(f"Error handling client {self.addres[client_socket]}: {e}")
+                break
 
+    def handle_request(self, newdata, x):
+        logger.debug(f'recive: {newdata}')
+        lines = newdata.splitlines()
+        # noves dades
+        for line in lines:
+            if line.startswith("SETUP"):
+                if self.state.get_state() == "INIT":
+                    try:
+                        self.state.transition("SETUP")
+                        logger.debug(f"SETUP command received")
+
+                        self.funcion_setup(newdata, x)
+
+                        setup_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
+                        x.sendall(setup_response.encode())
+                        logger.debug(setup_response)
+                        if x not in self.outsocks:
+                            self.outsocks.append(x)
+                    except Exception as e:
+                        logger.error(f"Error in SETUP command: {e}")
+                        x.sendall(b"RTSP/1.0 500 Internal Server Error\r\n")
+                else:
+                    logger.error(f"Error in SETUP command: {e}")
+                    x.send(f"RTSP/1.0 500 Internal Server Error\r\n".encode())      
+                break
+            elif line.startswith("PLAY"):
+                if self.state.get_state() == "READY":
+                    try:
+                        self.state.transition("PLAY")
+                        logger.debug(f"PLAY command received")
+                        
+                        self.funcion_play(newdata)
+
+                        play_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
+                        x.sendall(play_response.encode())
+                        logger.debug(play_response)
+                        
+                        self.play_video_thread = threading.Thread(target=self.play_video, args=(x,))
+                        self.play_video_thread.start()
+                        logger.debug(f'send hola')
+                    except Exception as e:
+                        logger.debug(f"Error in PLAY command: {e}")
+                        x.send(f"RTSP/1.0 500 Internal Server Error\r\n".encode())
+                break
+            elif line.startswith("PAUSE"):
+                if self.state.get_state() == "PLAYING":
+                    try:
+                        self.state.transition("PAUSE")
+                        logger.debug(f"PAUSE command received")
+
+                        self.funcion_pause(newdata)
+
+                        pause_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
+                        x.sendall(pause_response.encode())
+                        logger.debug(pause_response)
+                        self.running = False
+                    except Exception as e:
+                        logger.debug(f"Error in PAUSE command: {e}")
+                        x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
+                break
+            elif line.startswith("TEARDOWN"):
+                if self.state.get_state() in ["READY", "PLAYING"]:
+                    try:
+                        self.state.transition("TEARDOWN")
+                        logger.debug(f"TEARDOWN command received")
+
+                        self.funcion_teardown(newdata)
+
+                        teardown_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
+                        x.sendall(teardown_response.encode())
+                        
+                        self.break_conection()
+                    except Exception as e:
+                        logger.debug(f"Error in TEARDOWN command: {e}")
+                        x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
+                break
+            else:
+                logger.debug(f"Unknown command {newdata}")
+                break
 
     def funcion_setup(self, data, x):
 
