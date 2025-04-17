@@ -92,6 +92,7 @@ class Client(object):
             self.rtp_sock.close()  # Tancar el socket RTP.
         self.root.destroy()  # Tancar la finestra.
         logger.debug("Finestra tancada")
+        self.rtp_thread.join()
         sys.exit(0)
 
     def ui_setup_event(self):
@@ -259,37 +260,68 @@ class Client(object):
             logger.error(f"Error updating movie frame: {e}")
 
     def ui_pause_event(self):
+        """
+        Gestiona l'esdeveniment del botó Pause.
+        """
+        if self.state.get_state() != "PLAYING":
+            logger.error("El client no està en estat PLAYING. No es pot fer PAUSE.")
+            return
+
         self.num_seq += 1
         pause_request = f'PAUSE {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n'
         self.sock.sendall(pause_request.encode())
         logger.debug(pause_request)
 
         response = self.sock.recv(4096).decode()
-        logger.debug(f"Received response from server: {response}")
+        logger.debug(f"Resposta rebuda del servidor: {response}")
+
         if "200 OK" in response:
-            self.ruunning = False
-            logger.info("Pause successful")
+            self.running = False  # Atura el thread RTP
+            if self.state.transition("PAUSE"):
+                logger.debug(f"Estat canviat a: {self.state.get_state()}")
+            else:
+                logger.error("Error canviant l'estat a READY.")
+            logger.info("Pause correcte")
             self.text["text"] = "Pause button clicked"
         else:
-            logger.error("Pause failed")
+            logger.error("Pause fallit")
             return
 
     def ui_teardown_event(self):
-        self.num_seq += 1 
+        """
+        Gestiona l'esdeveniment del botó Teardown.
+        """
+        if self.state.get_state() not in ["READY", "PLAYING"]:
+            logger.error("El client no està en un estat vàlid per fer TEARDOWN.")
+            return
+
+        self.num_seq += 1
         teardown_request = f'TEARDOWN {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n'
         self.sock.sendall(teardown_request.encode())
         logger.debug(teardown_request)
+
         response = self.sock.recv(4096).decode()
-        logger.debug(f"Received response from server: {response}")
+        logger.debug(f"Resposta rebuda del servidor: {response}")
+
         if "200 OK" in response:
-            
-            self.running = False
+            self.running = False  # Atura el thread RTP
+            #if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
+                #self.rtp_thread.join()  # Espera que el thread RTP acabi
+            if hasattr(self, 'rtp_sock'):
+                self.rtp_sock.close()  # Tanca el socket RTP
+                logger.debug("Socket RTP tancat")
 
-            self.rtp_sock.close() # tancar el socket UDP
-
+            # Reinicia les variables del client
             self.num_seq = 0
             self.session = None
-            
+
+            # Canviar l'estat a INIT
+            if self.state.transition("TEARDOWN"):
+                logger.debug(f"Estat canviat a: {self.state.get_state()}")
+            else:
+                logger.error("Error canviant l'estat a INIT.")
+            logger.info("Teardown correcte")
+            self.text["text"] = "Teardown button clicked"
         else:
-            logger.error("Teardown failed")
+            logger.error("Teardown fallit")
             return
