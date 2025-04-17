@@ -273,7 +273,6 @@ class Client(object):
 
             self.num_seq = 0
             self.session = None
-            self.running = False
             
         else:
             logger.error("Teardown failed")

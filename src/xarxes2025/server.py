@@ -1,7 +1,7 @@
 from loguru import logger
 from state_machine import State_machine
 import socket, select, threading
-import random
+import random, time
 from udpdatagram import UDPDatagram
 from videoprocessor import VideoProcessor
 
@@ -35,14 +35,15 @@ class Server(object):
         try:
             while True:
                 i,o,e = select.select(self.insocks, self.outsocks, [])
-                for self.x in i:
-                    if self.x is self.sock: # una nova conexio
+                for x in i:
+                    if x is self.sock: # una nova conexio
                         newsocket, addr = self.sock.accept()
                         logger.debug(f"New connection from {addr}")
                         self.insocks.append(newsocket)
                         self.addres[newsocket] = addr
                     else:
-                        newdata = self.x.recv(1024).decode()
+                        newdata = x.recv(1024).decode()
+                        logger.debug(f'recive: {newdata}')
                         if newdata:
                             lines = newdata.splitlines()
                             # noves dades
@@ -53,18 +54,19 @@ class Server(object):
                                             self.state.transition("SETUP")
                                             logger.debug(f"SETUP command received")
 
-                                            self.funcion_setup(newdata, self.x)
+                                            self.funcion_setup(newdata, x)
 
                                             setup_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            self.x.sendall(setup_response.encode())
-                                            if self.x not in self.outsocks:
-                                                self.outsocks.append(self.x)
+                                            x.sendall(setup_response.encode())
+                                            logger.debug(setup_response)
+                                            if x not in self.outsocks:
+                                                self.outsocks.append(x)
                                         except Exception as e:
                                             logger.error(f"Error in SETUP command: {e}")
-                                            self.x.sendall(b"RTSP/1.0 500 Internal Server Error\r\n")
+                                            x.sendall(b"RTSP/1.0 500 Internal Server Error\r\n")
                                     else:
                                         logger.error(f"Error in SETUP command: {e}")
-                                        self.x.send(f"RTSP/1.0 500 Internal Server Error\r\n".encode())      
+                                        x.send(f"RTSP/1.0 500 Internal Server Error\r\n".encode())      
                                     break
                                 elif line.startswith("PLAY"):
                                     if self.state.get_state() == "READY":
@@ -75,13 +77,15 @@ class Server(object):
                                             self.funcion_play(newdata)
 
                                             play_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            self.x.sendall(play_response.encode())
-                                            self.running = True
-                                            self.rtp_thread = threading.Thread(target=self.play_video(self.x))
-                                            self.rtp_thread.start()
+                                            x.sendall(play_response.encode())
+                                            logger.debug(play_response)
+                                            
+                                            self.play_video_thread = threading.Thread(target=self.play_video, args=(x,))
+                                            self.play_video_thread.start()
+                                            logger.debug(f'send hola')
                                         except Exception as e:
                                             logger.debug(f"Error in PLAY command: {e}")
-                                            self.x.send(f"RTSP/1.0 500 Internal Server Error\r\n".encode())
+                                            x.send(f"RTSP/1.0 500 Internal Server Error\r\n".encode())
                                     break
                                 elif line.startswith("PAUSE"):
                                     if self.state.get_state() == "PLAYING":
@@ -89,13 +93,15 @@ class Server(object):
                                             self.state.transition("PAUSE")
                                             logger.debug(f"PAUSE command received")
 
-                                            self.funcion_pause()
+                                            self.funcion_pause(newdata)
 
                                             pause_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            self.x.sendall(pause_response.encode())
+                                            x.sendall(pause_response.encode())
+                                            logger.debug(pause_response)
+                                            self.running = False
                                         except Exception as e:
                                             logger.debug(f"Error in PAUSE command: {e}")
-                                            self.x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
+                                            x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
                                     break
                                 elif line.startswith("TEARDOWN"):
                                     if self.state.get_state() in ["READY", "PLAYING"]:
@@ -103,27 +109,27 @@ class Server(object):
                                             self.state.transition("TEARDOWN")
                                             logger.debug(f"TEARDOWN command received")
 
-                                            self.funcion_teardown()
+                                            self.funcion_teardown(newdata)
 
                                             teardown_response = f"RTSP/1.0 200 OK\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                                            self.x.sendall(teardown_response.encode())
-                                            self.insocks.remove(self.x)
-                                            self.x.close()
+                                            x.sendall(teardown_response.encode())
+                                            
+                                            self.break_conection()
                                         except Exception as e:
                                             logger.debug(f"Error in TEARDOWN command: {e}")
-                                            self.x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
+                                            x.sendall(f"RTSP/1.0 500 Internal Server Error\r\n")
                                     break
                                 else:
                                     logger.debug(f"Unknown command {newdata}")
                                     break
                         else:
                             #desconexio
-                            logger.debug(f"Connection closed by {self.addres[self.x]}")
-                            del self.addres[self.x]
-                            try: self.outsocks.remove(self.x)
+                            logger.debug(f"Connection closed by {self.addres[x]}")
+                            del self.addres[x]
+                            try: self.outsocks.remove(x)
                             except ValueError: pass
-                            self.insocks.remove(self.x)
-                            self.x.close()
+                            self.insocks.remove(x)
+                            x.close()
         finally:
             self.sock.close()
 
@@ -157,8 +163,8 @@ class Server(object):
 
     def generar_id_session(self):
         prefix = "XARXES_"
-        numero_aleatori = f"{random.randint(0, 99999999):08d}"
-        id_session = prefix + numero_aleatori
+        numero_aleatori = f"{random.randint(1000, 9999):04d}"
+        id_session = prefix + "0000" + numero_aleatori
         return id_session
 
         
@@ -169,6 +175,8 @@ class Server(object):
         """
         Function to handle the PLAY command.
         """
+        # Here you would start sending the video frames over UDP
+        # You will need to implement the send_udp_frame method
         
         lines = str(data).splitlines()
         for line in lines:
@@ -183,31 +191,61 @@ class Server(object):
                 line = line.split(" ")
                 self.session = line[-1] 
                 logger.debug(f"Session: {self.session}")
-
-        # Here you would start sending the video frames over UDP
-        # You will need to implement the send_udp_frame method
-        # self.send_udp_frame()
+        
 
     def play_video(self, x):
-        
+        self.running = True
         while self.running:
             self.send_udp_frame(x)
+            logger.debug(f'hola: {x}')
 
-    def funcion_pause(self):
+    def funcion_pause(self, data):
         """
         Function to handle the PAUSE command.
         """
-        logger.debug("Pausing video stream")
         # Here you would pause the video streaming
         # You will need to implement the pause functionality
+        lines = str(data).splitlines()
+        for line in lines:
+            if line.startswith("PAUSE"):
+                line = line.split(" ")
+                self.filename = line[1]
+                logger.debug(f"Nom del fitxer: {self.filename}")
+            elif line.startswith("CSeq:"):
+                self.num_seq = line.split(" ")[1]
+                logger.debug(f"CSeq: {self.num_seq}")
+            elif line.startswith("Session:"):
+                line = line.split(" ")
+                self.session = line[-1] 
+                logger.debug(f"Session: {self.session}")
+        
 
-    def funcion_teardown(self):
+    def funcion_teardown(self,data):
         """
         Function to handle the TEARDOWN command.
         """
-        logger.debug("Tearing down video stream")
+        
         # Here you would stop the video streaming
         # You will need to implement the teardown functionality
+
+        lines = str(data).splitlines()
+        for line in lines:
+            if line.startswith("PLAY"):
+                line = line.split(" ")
+                self.filename = line[1]
+                logger.debug(f"Nom del fitxer: {self.filename}")
+            elif line.startswith("CSeq:"):
+                self.num_seq = line.split(" ")[1]
+                logger.debug(f"CSeq: {self.num_seq}")
+            elif line.startswith("Session:"):
+                line = line.split(" ")
+                self.session = line[-1] 
+                logger.debug(f"Session: {self.session}")
+
+
+    def break_conection(self):
+        self.running = False
+        self.socketudp.close()
 
     # # 
     # # This is not complete code, it's just an skeleton to help you get started.
@@ -229,4 +267,4 @@ class Server(object):
 
                 # send UDP Datagram
                 self.socketudp.sendto(udp_datagram, (self.addres[x][0], int(self.client_port_udp)))
-                        
+                time.sleep(1/25)
