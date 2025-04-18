@@ -98,7 +98,15 @@ def server(ctx, port):
     help="RTSP server destination IP address",
     default="127.0.0.1"
 )
-def client(ctx, videofile, port, destination):
+
+@click.option(
+    "-u",
+    "--udp_port",
+    help="port udp for RTP",
+    default="25000"
+)
+
+def client(ctx, videofile, port, destination, udp_port):
     """
     Start an RTSP client streaming video.
 
@@ -107,6 +115,6 @@ def client(ctx, videofile, port, destination):
     port (default is 4321).
     """
     logger.info("Client xarxes 2025 video streaming")
-    options = optparse.Values({"destination": destination, "port": port, "filename": videofile})
+    options = optparse.Values({"destination": destination, "port": port, "filename": videofile, "udp_port" : udp_port})
     client = Client(options)
     client.root.mainloop()
