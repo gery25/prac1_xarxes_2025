@@ -189,7 +189,7 @@ class ClientHandler (threading.Thread):
 
                 # send UDP Datagram
                 self.socketudp.sendto(udp_datagram, (self.client_address[0], int(self.client_port_udp)))
-                time.sleep(1/25)
+                time.sleep(1/30)
 
 
     def cleanup(self):

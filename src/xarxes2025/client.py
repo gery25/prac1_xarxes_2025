@@ -25,6 +25,11 @@ class Client(object):
 
         :param options: Opcions de configuració com el port, el fitxer i la destinació.
         """
+        self.initial_timestamp = None
+        self.start_time = None
+        self.last_seq_num = -1  # Últim número de seqüència rebut
+        self.packets_lost = 0   # Contador de paquets perduts
+        self.packets_received = 0  # Contador de paquets rebuts correctament
         self.num_seq = 0  # Número de seqüència RTSP.
         self.state = State_machine()  # Inicialitza la màquina d'estats.
         logger.debug(f"Client creat amb estat inicial: {self.state.get_state()}")
@@ -85,15 +90,37 @@ class Client(object):
 
     def ui_close_window(self):
         """
-        Tanca la finestra i atura el thread RTP.
+        Tanca la finestra i atura el thread RTP de manera segura.
         """
-        self.running = False  # Aturar el thread RTP.
-        if hasattr(self, 'rtp_sock'):
-            self.rtp_sock.close()  # Tancar el socket RTP.
-        self.root.destroy()  # Tancar la finestra.
-        logger.debug("Finestra tancada")
-        self.rtp_thread.join()
-        sys.exit(0)
+        try:
+            # 1. Aturar el bucle del thread
+            self.running = False
+            logger.debug("Aturant el thread RTP...")
+
+            # 2. Esperar que el thread acabi (amb timeout)
+            if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
+                self.rtp_thread.join(timeout=2.0)  # Esperar màxim 2 segons
+                if self.rtp_thread.is_alive():
+                    logger.warning("No s'ha pogut aturar el thread RTP correctament")
+
+            # 3. Tancar els sockets
+            if hasattr(self, 'rtp_sock'):
+                self.rtp_sock.close()
+                logger.debug("Socket RTP tancat")
+            if hasattr(self, 'sock'):
+                self.sock.close()
+                logger.debug("Socket RTSP tancat")
+
+            # 4. Destruir la finestra
+            self.root.destroy()
+            logger.debug("Finestra tancada")
+
+            # 5. Sortir del programa
+            logger.info("Client aturat correctament")
+            sys.exit(0)
+        except Exception as e:
+            logger.error(f"Error tancant el client: {e}")
+            sys.exit(1)
 
     def ui_setup_event(self):
         """
@@ -156,27 +183,36 @@ class Client(object):
         """
         Rep paquets RTP i processa els frames de vídeo.
         """
-
-        initial_timestamp = None
-        start_time =  None
+        
         
         while self.running:
             try:
-                # Rebre dades del socket RTP.
                 data, _ = self.rtp_sock.recvfrom(65535)
-               
                 datagram = UDPDatagram(0,b"")
                 datagram.decode(data)
 
+                # Comprovar si s'han perdut paquets
+                self.current_seq_num = datagram.get_seqnum()
+                if self.last_seq_num != -1:  # Ignorem el primer paquet
+                    expected_seq_num = (self.last_seq_num + 1) % 65536  # Mòdul per gestionar el wrap-around
+                    if self.current_seq_num != expected_seq_num:
+                        # S'han perdut paquets
+                        lost = (self.current_seq_num - expected_seq_num) % 65536
+                        self.packets_lost += lost
+                        logger.warning(f"Paquets perduts: {lost} (esperàvem {expected_seq_num}, rebut {self.current_seq_num})")
+                
+                self.last_seq_num = self.current_seq_num
+                self.packets_received += 1
+
                 timestamp = datagram.timestamp()
 
-                if initial_timestamp is None:
-                    initial_timestamp = timestamp
-                    start_time = time.time()
+                if self.initial_timestamp is None:
+                    self.initial_timestamp = timestamp
+                    self.start_time = time.time()
                 
 
-                delay = (timestamp - initial_timestamp) / 90000.0
-                target_time = start_time + delay
+                delay = (timestamp - self.initial_timestamp) / 90000.0
+                target_time = self.start_time + delay
 
                 current_time = time.time()
                 slep_time = target_time - current_time
@@ -207,12 +243,11 @@ class Client(object):
                     
                 logger.debug(f"Frame extret de mida {len(payload)} bytes")
                 logger.debug(f"Seq num: {datagram.get_seqnum()}")
-                self.text["text"] = f'Playing: Seq Num {datagram.get_seqnum()} lost: {0} OK: {1}'
+                self.text["text"] = f'Playing: Seq Num {self.current_seq_num} | Perduts: {self.packets_lost} | OK: {self.packets_received}'
             except socket.error as e:
                 # Error en rebre dades.
                 logger.error(f"Error rebent dades: {e}")
                 break
-
 
     def ui_play_event(self):
         """

@@ -29,20 +29,51 @@ class Server(object):
 
         
     def main(self):
+        """
+        Bucle principal del servidor que gestiona les connexions dels clients.
+        """
         try:
+            logger.debug("Servidor iniciat i escoltant connexions...")
             while True:
-                i, o, e = select.select(self.insocks, self.outsocks, [])
-                for x in i:
-                    if x is self.sock:  # Una nova connexió
-                        newsocket, addr = self.sock.accept()
-                        logger.debug(f"New connection from {addr}")
-                        self.insocks.append(newsocket)
-                        self.addres[newsocket] = addr
+                try:
+                    i, o, e = select.select(self.insocks, self.outsocks, [])
+                    for x in i:
+                        if x is self.sock:  # Nova connexió
+                            newsocket, addr = self.sock.accept()
+                            logger.debug(f"Nova connexió des de {addr}")
 
-                        # Crear un thread per gestionar aquest client
-                        client_handler = ClientHandler(newsocket, addr)
-                        client_handler.start()
+                            # Crear un thread per gestionar aquest client
+                            client_handler = ClientHandler(newsocket, addr)
+                            client_handler.start()
+                        else:
+                            # Si un client es desconnecta, eliminem el seu socket
+                            try:
+                                data = x.recv(1024)
+                                if not data:
+                                    logger.debug(f"Client {self.addres[x]} desconnectat")
+                                    self.insocks.remove(x)
+                                    del self.addres[x]
+                                    x.close()
+                            except:
+                                logger.debug(f"Error amb el client {self.addres[x]}, tancant connexió")
+                                self.insocks.remove(x)
+                                del self.addres[x]
+                                x.close()
 
-                    
+                except select.error as e:
+                    logger.error(f"Error en select: {e}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Error inesperat: {e}")
+                    continue
+
+        except KeyboardInterrupt:
+            logger.info("Servidor aturat per l'usuari")
         finally:
+            # Tancar tots els sockets clients
+            for sock in self.insocks:
+                if sock is not self.sock:
+                    sock.close()
+            # Tancar el socket principal
             self.sock.close()
+            logger.info("Servidor aturat correctament")
