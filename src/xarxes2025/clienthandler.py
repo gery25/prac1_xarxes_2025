@@ -175,10 +175,10 @@ class ClientHandler (threading.Thread):
         self.socketudp.close()
 
     def send_udp_frame(self):
-      
+        
         # This snippet reads from self.video (a VideoProcessor object) and prepares 
         # the frame to be sent over UDP. 
-
+        MAX_UDP_SIZE = 65507  # Mida màxima segura per UDP en la majoria de xarxes
         data = self.video.next_frame()
         if data:
             if len(data)>0:
@@ -188,8 +188,13 @@ class ClientHandler (threading.Thread):
                 udp_datagram = UDPDatagram(self.frame_number, data).get_datagram()
 
                 # send UDP Datagram
-                self.socketudp.sendto(udp_datagram, (self.client_address[0], int(self.client_port_udp)))
-                time.sleep(1/30)
+                for i in range(0, len(udp_datagram), MAX_UDP_SIZE):
+                    fragment = udp_datagram[i:i + MAX_UDP_SIZE]
+                    self.socketudp.sendto(fragment, 
+                                        (self.client_address[0], 
+                                        int(self.client_port_udp)))
+                    
+            time.sleep(1/25)
 
 
     def cleanup(self):

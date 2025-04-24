@@ -130,12 +130,32 @@ class Client(object):
             logger.error("El client no està en estat INIT. No es pot fer SETUP.")
             return
 
-        self.num_seq += 1  # Incrementar el número de seqüència RTSP.
+        self.num_seq += 1
         try:
-            # Obtenir l'IP i el port locals.
+            # Obtenir l'IP i el port locals
             local_ip, local_port = self.sock.getsockname()
 
-            # Crear i enviar la petició SETUP al servidor.
+            # Crear i vincular el socket RTP amb SO_REUSEADDR
+            self.rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.rtp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.rtp_sock.settimeout(0.5)  # Afegim un timeout de 0.5 segons
+            
+            # Intentar vincular el socket a diferents ports si el primer falla
+            max_attempts = 10
+            for port_offset in range(max_attempts):
+                try:
+                    bind_port = local_port + port_offset
+                    self.rtp_sock.bind((local_ip, bind_port))
+                    logger.debug("Socket RTP creat i vinculat a %s:%d", local_ip, bind_port)
+                    local_port = bind_port  # Actualitzar el port per la petició SETUP
+                    break
+                except socket.error as e:
+                    if port_offset == max_attempts - 1:
+                        logger.error("No s'ha pogut crear el socket RTP després de %d intents", max_attempts)
+                        raise
+                    continue
+
+            # Crear i enviar la petició SETUP al servidor
             setup_request = f'SETUP {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\nTransport: RTP/UDP; client_port= {local_port}\r\n'
             self.sock.sendall(setup_request.encode())
             logger.debug(setup_request)
@@ -174,7 +194,9 @@ class Client(object):
                 logger.error("Setup fallit")
                 return
         except socket.error as e:
-            logger.error(f"Error connectant amb el servidor: {e}")
+            logger.error("Error en el setup: %s", e)
+            if hasattr(self, 'rtp_sock'):
+                self.rtp_sock.close()
             return
         logger.debug("Botó Setup clicat")
         self.text["text"] = "Botó Setup clicat"
@@ -183,11 +205,9 @@ class Client(object):
         """
         Rep paquets RTP i processa els frames de vídeo.
         """
-        
-        
         while self.running:
             try:
-                data, _ = self.rtp_sock.recvfrom(65535)
+                data, _ = self.rtp_sock.recvfrom(65536)
                 datagram = UDPDatagram(0,b"")
                 datagram.decode(data)
 
@@ -217,9 +237,9 @@ class Client(object):
                 current_time = time.time()
                 slep_time = target_time - current_time
 
-                if slep_time > 0:
-                    time.sleep(slep_time)
-                    logger.debug(f"Sleeping for {slep_time} seconds")
+                #if slep_time > 0:
+                    #time.sleep(slep_time)
+                    #logger.debug(f"Sleeping for {slep_time} seconds")
 
                 payload = datagram.get_payload()
 
@@ -244,10 +264,13 @@ class Client(object):
                 logger.debug(f"Frame extret de mida {len(payload)} bytes")
                 logger.debug(f"Seq num: {datagram.get_seqnum()}")
                 self.text["text"] = f'Playing: Seq Num {self.current_seq_num} | Perduts: {self.packets_lost} | OK: {self.packets_received}'
+            except socket.timeout:
+                # Timeout normal, continuem el bucle si encara estem running
+                continue
             except socket.error as e:
-                # Error en rebre dades.
-                logger.error(f"Error rebent dades: {e}")
+                logger.error("Error rebent dades: %s", e)
                 break
+        logger.debug("Thread RTP finalitzat")
 
     def ui_play_event(self):
         """
@@ -340,8 +363,8 @@ class Client(object):
 
         if "200 OK" in response:
             self.running = False  # Atura el thread RTP
-            #if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
-                #self.rtp_thread.join()  # Espera que el thread RTP acabi
+            if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
+                self.rtp_thread.join()  # Espera que el thread RTP acabi
             if hasattr(self, 'rtp_sock'):
                 self.rtp_sock.close()  # Tanca el socket RTP
                 logger.debug("Socket RTP tancat")
@@ -349,6 +372,11 @@ class Client(object):
             # Reinicia les variables del client
             self.num_seq = 0
             self.session = None
+            self.initial_timestamp = None
+            self.start_time = None
+            self.last_seq_num = -1  
+            self.packets_lost = 0  
+            self.packets_received = 0  
 
             # Canviar l'estat a INIT
             if self.state.transition("TEARDOWN"):

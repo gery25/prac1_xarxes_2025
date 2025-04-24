@@ -98,7 +98,6 @@ def server(ctx, port):
     help="RTSP server destination IP address",
     default="127.0.0.1"
 )
-
 @click.option(
     "-u",
     "--udp_port",
