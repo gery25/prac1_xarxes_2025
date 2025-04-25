@@ -205,72 +205,77 @@ class Client(object):
         """
         Rep paquets RTP i processa els frames de vídeo.
         """
+        frame_buffer = bytearray()  # Buffer per acumular fragments
+        current_frame_num = -1
+
         while self.running:
             try:
                 data, _ = self.rtp_sock.recvfrom(65536)
-                datagram = UDPDatagram(0,b"")
+                datagram = UDPDatagram(0, b"")
                 datagram.decode(data)
 
-                # Comprovar si s'han perdut paquets
+                # Gestió de número de seqüència
                 self.current_seq_num = datagram.get_seqnum()
-                if self.last_seq_num != -1:  # Ignorem el primer paquet
-                    expected_seq_num = (self.last_seq_num + 1) % 65536  # Mòdul per gestionar el wrap-around
-                    if self.current_seq_num != expected_seq_num:
-                        # S'han perdut paquets
-                        lost = (self.current_seq_num - expected_seq_num) % 65536
-                        self.packets_lost += lost
-                        logger.warning(f"Paquets perduts: {lost} (esperàvem {expected_seq_num}, rebut {self.current_seq_num})")
                 
+                # Si és un nou frame
+                if current_frame_num != self.current_seq_num:
+                    # Processar el frame anterior si existeix
+                    if len(frame_buffer) > 0:
+                        self._process_complete_frame(frame_buffer)
+                    frame_buffer = bytearray()
+                    current_frame_num = self.current_seq_num
+
+                # Afegir el fragment al buffer
+                frame_buffer.extend(datagram.get_payload())
+
+                # Gestió de pèrdua de paquets
+                if self.last_seq_num != -1:
+                    expected_seq_num = (self.last_seq_num + 1) % 65536
+                    if self.current_seq_num != expected_seq_num:
+                        lost = (self.current_seq_num - expected_seq_num) % 65536
+                        if lost < 100:  # Ignorem valors absurds
+                            self.packets_lost += lost
+                            logger.warning(f"Paquets perduts: {lost} (esperàvem {expected_seq_num}, rebut {self.current_seq_num})")
+
                 self.last_seq_num = self.current_seq_num
                 self.packets_received += 1
 
-                timestamp = datagram.timestamp()
+                # Actualitzar estadístiques
+                self.text["text"] = (f'Playing: Seq Num {self.current_seq_num} | '
+                                    f'Perduts: {self.packets_lost} | '
+                                    f'OK: {self.packets_received}')
 
-                if self.initial_timestamp is None:
-                    self.initial_timestamp = timestamp
-                    self.start_time = time.time()
-                
-
-                delay = (timestamp - self.initial_timestamp) / 90000.0
-                target_time = self.start_time + delay
-
-                current_time = time.time()
-                slep_time = target_time - current_time
-
-                #if slep_time > 0:
-                    #time.sleep(slep_time)
-                    #logger.debug(f"Sleeping for {slep_time} seconds")
-
-                payload = datagram.get_payload()
-
-                buffer = bytearray()
-                buffer.extend(payload)
-
-                try:
-                    Image.open(io.BytesIO(payload)).verify()  # Verifica si el payload és un JPEG vàlid
-                except Exception as e:
-                    logger.error(f"Payload rebut no és un JPEG vàlid: {e}")
-                    return
-                
-                try:
-                    Image.open(io.BytesIO(buffer)).verify()
-                    logger.debug("Image verified successfully")
-                    self.updateMovie(buffer)
-                    buffer.clear()
-                except Exception as e:
-                    logger.error(f"Error verifying image: {e}")
-                    continue
-                    
-                logger.debug(f"Frame extret de mida {len(payload)} bytes")
-                logger.debug(f"Seq num: {datagram.get_seqnum()}")
-                self.text["text"] = f'Playing: Seq Num {self.current_seq_num} | Perduts: {self.packets_lost} | OK: {self.packets_received}'
             except socket.timeout:
-                # Timeout normal, continuem el bucle si encara estem running
                 continue
             except socket.error as e:
                 logger.error("Error rebent dades: %s", e)
                 break
+
         logger.debug("Thread RTP finalitzat")
+
+    def _process_complete_frame(self, frame_buffer):
+        """
+        Processa un frame complet.
+        
+        Args:
+            frame_buffer (bytearray): Buffer amb les dades del frame
+        """
+        try:
+            # Verificar que és un JPEG vàlid
+            with io.BytesIO(frame_buffer) as bio:
+                img = Image.open(bio)
+                img.verify()
+                
+            # Si la verificació és correcta, mostrar la imatge
+            with io.BytesIO(frame_buffer) as bio:
+                img = Image.open(bio)
+                photo = ImageTk.PhotoImage(img)
+                self.movie.configure(image=photo, height=380)
+                self.movie.photo_image = photo
+                logger.debug(f"Frame mostrat correctament: {len(frame_buffer)} bytes")
+                
+        except Exception as e:
+            logger.error(f"Error processant frame: {e}")
 
     def ui_play_event(self):
         """

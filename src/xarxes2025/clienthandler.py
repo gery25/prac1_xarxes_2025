@@ -86,6 +86,7 @@ class ClientHandler (threading.Thread):
                 line = line.split(" ")
                 self.filename = line[1]
                 logger.debug(f"Nom del fitxer: {self.filename}")
+
             elif line.startswith("CSeq:"):
                 self.num_seq = line.split(" ")[1]
                 logger.debug(f"CSeq: {self.num_seq}")
@@ -99,6 +100,7 @@ class ClientHandler (threading.Thread):
                 line = line.split(" ")
                 self.session = line[-1] 
                 logger.debug(f"Session: {self.session}")
+            
         if action == "SETUP":
             self.session = self.generar_id_session()
 
@@ -131,10 +133,16 @@ class ClientHandler (threading.Thread):
 
     
     def play_video(self):
+        """Reprodueix el vídeo enviant frames via UDP."""
         self.running = True
         while self.running:
-            self.send_udp_frame()
-
+            if not self.send_udp_frame():  # Comprova si el vídeo ha acabat
+                logger.info("Vídeo finalitzat")
+                self.running = False
+                # Notificar al client que el vídeo ha acabat
+                end_message = f"RTSP/1.0 205 END\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
+                self.client_socket.sendall(end_message.encode())
+                break
 
     def handle_pause(self, data):
         if self.state.get_state() == "PLAYING":
@@ -175,26 +183,37 @@ class ClientHandler (threading.Thread):
         self.socketudp.close()
 
     def send_udp_frame(self):
+        """
+        Envia un frame del vídeo via UDP.
         
-        # This snippet reads from self.video (a VideoProcessor object) and prepares 
-        # the frame to be sent over UDP. 
-        MAX_UDP_SIZE = 65507  # Mida màxima segura per UDP en la majoria de xarxes
+        Returns:
+            bool: True si s'ha enviat el frame correctament, False si el vídeo ha acabat
+        """
         data = self.video.next_frame()
-        if data:
-            if len(data)>0:
+        if data is None:  # El vídeo ha acabat
+            return False
+            
+        if len(data) > 0:
+            try:
                 self.frame_number = self.video.get_frame_number()
-                # create UDP Datagram
-
                 udp_datagram = UDPDatagram(self.frame_number, data).get_datagram()
 
-                # send UDP Datagram
+                # Enviar el datagrama fragmentat si és necessari
+                MAX_UDP_SIZE = 65507
                 for i in range(0, len(udp_datagram), MAX_UDP_SIZE):
                     fragment = udp_datagram[i:i + MAX_UDP_SIZE]
                     self.socketudp.sendto(fragment, 
                                         (self.client_address[0], 
                                         int(self.client_port_udp)))
-                    
-            time.sleep(1/25)
+                
+                time.sleep(1/25)  # Control de velocitat de reproducció
+                return True
+                
+            except Exception as e:
+                logger.error(f"Error enviant frame: {e}")
+                return False
+                
+        return True
 
 
     def cleanup(self):
