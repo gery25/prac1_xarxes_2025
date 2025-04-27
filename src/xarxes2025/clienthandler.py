@@ -8,10 +8,10 @@ from udpdatagram import UDPDatagram
 
 
 class ClientHandler (threading.Thread):
-    def __init__(self, client_socket, clietn_address):
+    def __init__(self, client_socket, client_address):
         super().__init__() # cridar al constructor de la superclase Thread
         self.client_socket = client_socket
-        self.client_address = clietn_address
+        self.client_address = client_address
         self.filename = None
         self.num_seq = 0
         self.client_port_udp = None

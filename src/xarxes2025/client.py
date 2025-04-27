@@ -22,31 +22,54 @@ class Client(object):
     def __init__(self, options):
         """
         Inicialitza un nou client de streaming de vídeo.
-
-        :param options: Opcions de configuració com el port, el fitxer i la destinació.
         """
+        # Atributs de control de paquets
         self.initial_timestamp = None
         self.start_time = None
-        self.last_seq_num = -1  # Últim número de seqüència rebut
-        self.packets_lost = 0   # Contador de paquets perduts
-        self.packets_received = 0  # Contador de paquets rebuts correctament
-        self.num_seq = 0  # Número de seqüència RTSP.
-        self.state = State_machine()  # Inicialitza la màquina d'estats.
-        logger.debug(f"Client creat amb estat inicial: {self.state.get_state()}")
+        self.last_seq_num = -1
+        self.current_seq_num = 0
+        self.packets_lost = 0
+        self.packets_received = 0
+        
+        # Atributs de control RTSP
+        self.num_seq = 0
+        self.session = None
+        self.running = False
+        
+        # Atributs de sockets i thread
+        self.sock = None
+        self.rtp_sock = None
+        self.rtp_thread = None
+        
+        # Atributs d'UI
+        self.root = None
+        self.movie = None
+        self.text = None
+        
+        # Inicialització
+        self.state = State_machine()
         self.options = options
+        
+        logger.debug("Client creat amb estat inicial: %s", self.state.get_state())
+        
+        self._setup_connection()
+        self.create_ui()
+
+    def _setup_connection(self):
+        """Configura la connexió inicial amb el servidor."""
         try:
-            # Crear un socket TCP per connectar-se al servidor.
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((self.options.destination, self.options.port))
-            logger.debug(f"Paràmetres del client: fitxer: {self.options.filename}, port: {self.options.port}, host: {self.options.destination}")
+            logger.debug(
+                "Paràmetres del client: fitxer: %s, port: %d, host: %s",
+                self.options.filename,
+                self.options.port,
+                self.options.destination
+            )
         except socket.error as e:
-            # Gestionar errors de connexió.
-            logger.error(f"Error connectant amb el servidor: {e}")
-            messagebox.showerror("Error de Connexió", f"Error connectant amb el servidor: {e}")
-            return
-            
-        self.create_ui()  # Crear la interfície gràfica d'usuari.
-        print('Connectat al servidor')
+            logger.error("Error connectant amb el servidor: %s", e)
+            messagebox.showerror("Error de Connexió", str(e))
+            raise
 
     def create_ui(self):
         """
@@ -146,12 +169,12 @@ class Client(object):
                 try:
                     bind_port = local_port + port_offset
                     self.rtp_sock.bind((local_ip, bind_port))
-                    logger.debug("Socket RTP creat i vinculat a %s:%d", local_ip, bind_port)
+                    logger.debug(f"Socket RTP creat i vinculat a {local_ip}:{bind_port}")
                     local_port = bind_port  # Actualitzar el port per la petició SETUP
                     break
                 except socket.error as e:
                     if port_offset == max_attempts - 1:
-                        logger.error("No s'ha pogut crear el socket RTP després de %d intents", max_attempts)
+                        logger.error(f"No s'ha pogut crear el socket RTP després de {max_attempts} intents")
                         raise
                     continue
 
@@ -160,46 +183,37 @@ class Client(object):
             self.sock.sendall(setup_request.encode())
             logger.debug(setup_request)
 
-            # Rebre la resposta del servidor.
+            # Rebre la resposta del servidor
             response = self.sock.recv(4096).decode()
             logger.debug(f"Resposta rebuda del servidor: {response}")
 
-            # Processar la resposta per obtenir la sessió.
-            lines = response.splitlines()
-            for line in lines:
-                if line.startswith("Session:"):
-                    self.session = line.split(":")[1].strip()
-                    logger.debug(f"ID de sessió: {self.session}")
-                    break
-
             if "200 OK" in response:
-                # Configuració exitosa.
-                logger.info("Setup correcte")
-                try:
-                    # Crear i vincular el socket RTP.
-                    logger.debug(f"Socket RTP creat i vinculat a {local_ip}:{local_port}")
-                    self.rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    self.rtp_sock.bind((local_ip, local_port))
-                    logger.debug(f"Socket RTP creat i vinculat a {local_ip}:{local_port}")
-                except socket.error as e:
-                    logger.error(f"Error creant el socket RTP: {e}")
-                    return
+                # Processar la resposta per obtenir la sessió
+                lines = response.splitlines()
+                for line in lines:
+                    if line.startswith("Session:"):
+                        self.session = line.split(":")[1].strip()
+                        logger.debug(f"ID de sessió: {self.session}")
+                        break
 
                 # Canviar l'estat a READY
                 if self.state.transition("SETUP"):
                     logger.debug(f"Estat canviat a: {self.state.get_state()}")
                 else:
                     logger.error("Error canviant l'estat a READY.")
+                logger.info("Setup correcte")
+                self.text["text"] = "Setup completat"
             else:
                 logger.error("Setup fallit")
+                if hasattr(self, 'rtp_sock'):
+                    self.rtp_sock.close()
                 return
+
         except socket.error as e:
             logger.error("Error en el setup: %s", e)
             if hasattr(self, 'rtp_sock'):
                 self.rtp_sock.close()
             return
-        logger.debug("Botó Setup clicat")
-        self.text["text"] = "Botó Setup clicat"
 
     def receive_rtp(self):
         """
@@ -221,7 +235,7 @@ class Client(object):
                 if current_frame_num != self.current_seq_num:
                     # Processar el frame anterior si existeix
                     if len(frame_buffer) > 0:
-                        self._process_complete_frame(frame_buffer)
+                        self.updateMovie(frame_buffer)
                     frame_buffer = bytearray()
                     current_frame_num = self.current_seq_num
 
@@ -252,30 +266,6 @@ class Client(object):
                 break
 
         logger.debug("Thread RTP finalitzat")
-
-    def _process_complete_frame(self, frame_buffer):
-        """
-        Processa un frame complet.
-        
-        Args:
-            frame_buffer (bytearray): Buffer amb les dades del frame
-        """
-        try:
-            # Verificar que és un JPEG vàlid
-            with io.BytesIO(frame_buffer) as bio:
-                img = Image.open(bio)
-                img.verify()
-                
-            # Si la verificació és correcta, mostrar la imatge
-            with io.BytesIO(frame_buffer) as bio:
-                img = Image.open(bio)
-                photo = ImageTk.PhotoImage(img)
-                self.movie.configure(image=photo, height=380)
-                self.movie.photo_image = photo
-                logger.debug(f"Frame mostrat correctament: {len(frame_buffer)} bytes")
-                
-        except Exception as e:
-            logger.error(f"Error processant frame: {e}")
 
     def ui_play_event(self):
         """
@@ -311,16 +301,28 @@ class Client(object):
         
     
     def updateMovie(self, data):
-        """Update the video frame in the GUI from the byte buffer we received."""
+        """
+        Processa un frame complet.
+        
+        Args:
+            frame_buffer (bytearray): Buffer amb les dades del frame
+        """
         try:
-            logger.debug(f"Updating movie frame")
-            # Descodificar el payload RTP i actualitzar la pantalla
-            photo = ImageTk.PhotoImage(Image.open(io.BytesIO(data)))
-            logger.debug(f"Image size: {photo.width()} x {photo.height()}")
-            self.movie.configure(image = photo, height=380)
-            self.movie.photo_image = photo
+            # Verificar que és un JPEG vàlid
+            with io.BytesIO(data) as bio:
+                img = Image.open(bio)
+                img.verify()
+                
+            # Si la verificació és correcta, mostrar la imatge
+            with io.BytesIO(data) as bio:
+                img = Image.open(bio)
+                photo = ImageTk.PhotoImage(img)
+                self.movie.configure(image = photo, height=380)
+                self.movie.photo_image = photo
+                logger.debug(f"Frame mostrat correctament: {len(data)} bytes")
+                
         except Exception as e:
-            logger.error(f"Error updating movie frame: {e}")
+            logger.error(f"Error processant frame: {e}")
 
     def ui_pause_event(self):
         """
