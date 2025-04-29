@@ -50,7 +50,7 @@ class Client(object):
         self.state = State_machine()
         self.options = options
         
-        logger.debug("Client creat amb estat inicial: %s", self.state.get_state())
+        logger.debug(f"Client creat amb estat inicial: {self.state.get_state()}" )
         
         self._setup_connection()
         self.create_ui()
@@ -61,13 +61,11 @@ class Client(object):
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((self.options.destination, self.options.port))
             logger.debug(
-                "Paràmetres del client: fitxer: %s, port: %d, host: %s",
-                self.options.filename,
-                self.options.port,
-                self.options.destination
+                f"Paràmetres del client: fitxer: {self.options.filename},"
+                f"port: {self.options.port}, host: {self.options.destination}"
             )
         except socket.error as e:
-            logger.error("Error connectant amb el servidor: %s", e)
+            logger.error(f"Error connectant amb el servidor: {e}")
             messagebox.showerror("Error de Connexió", str(e))
             raise
 
@@ -319,7 +317,7 @@ class Client(object):
                 photo = ImageTk.PhotoImage(img)
                 self.movie.configure(image = photo, height=380)
                 self.movie.photo_image = photo
-                logger.debug(f"Frame mostrat correctament: {len(data)} bytes")
+                # logger.debug(f"Frame mostrat correctament: {len(data)} bytes")
                 
         except Exception as e:
             logger.error(f"Error processant frame: {e}")
@@ -361,7 +359,8 @@ class Client(object):
             return
 
         self.num_seq += 1
-        teardown_request = f'TEARDOWN {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n'
+        teardown_request = (f'TEARDOWN {self.options.filename} RTSP/1.0\r\n'
+                            f'CSeq: {self.num_seq}\r\nSession: {self.session}\r\n')
         self.sock.sendall(teardown_request.encode())
         logger.debug(teardown_request)
 
@@ -390,8 +389,25 @@ class Client(object):
                 logger.debug(f"Estat canviat a: {self.state.get_state()}")
             else:
                 logger.error("Error canviant l'estat a INIT.")
+                self.error_proces()
+                logger.debug("Client reiniciat correctament")
             logger.info("Teardown correcte")
             self.text["text"] = "Teardown button clicked"
         else:
             logger.error("Teardown fallit")
             return
+    
+    def error_proces(self):
+        self.num_seq = 0
+        self.session = None
+        self.initial_timestamp = None
+        self.start_time = None
+        self.last_seq_num = -1  
+        self.packets_lost = 0  
+        self.packets_received = 0 
+        self.running = False
+        if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
+            self.rtp_thread.join()
+        if hasattr(self, 'rtp_sock'):
+            self.rtp_sock.close()
+        self.state = "INIT"
