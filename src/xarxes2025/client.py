@@ -85,7 +85,7 @@ class Client(object):
         """
         try:
             self.rtsp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sock.connect((self.options.destination, self.options.port))
+            self.rtsp_sock.connect((self.options.destination, self.options.port))
             logger.debug(
                 f"Paràmetres del client: fitxer: {self.options.filename},"
                 f"port: {self.options.port}, host: {self.options.destination}"
