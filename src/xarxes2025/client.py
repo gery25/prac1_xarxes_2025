@@ -24,7 +24,7 @@ class Client(object):
         Inicialitza un nou client de streaming de vídeo.
         """
         # Atributs de control de paquets
-        self.init_packaget_control()
+        self.init_packet_control()
         
         # Atributs de control RTSP
         self.init_rtsp_control()
@@ -44,7 +44,7 @@ class Client(object):
         self._setup_connection()
         self.create_ui()
 
-    def init_packaget_control(self):
+    def init_packet_control(self):
         """
         Inicialitza els atributs de control de paquets.
         """
@@ -85,10 +85,10 @@ class Client(object):
         """
         try:
             self.rtsp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.rtsp_sock.connect((self.options.destination, self.options.port))
+            self.rtsp_sock.connect((self.options.host, self.options.port))
             logger.debug(
                 f"Paràmetres del client: fitxer: {self.options.filename},"
-                f"port: {self.options.port}, host: {self.options.destination}"
+                f"port: {self.options.port}, host: {self.options.host}"
             )
         except socket.error as e:
             logger.error(f"Error connectant amb el servidor: {e}")
@@ -179,36 +179,20 @@ class Client(object):
 
         self.num_seq += 1
         try:
-            """
-            # Intentar vincular el socket a diferents ports si el primer falla
-            max_attempts = 10
-            for port_offset in range(max_attempts):
-                try:
-                    bind_port = local_port + port_offset
-                    self.rtp_sock.bind((self.options.destination, self.options.udp_port))
-                    logger.debug(f"Socket RTP creat i vinculat a {self.options.destination}:{self.options.udp_port}")
-                    local_port = bind_port  # Actualitzar el port per la petició SETUP
-                    break
-                except socket.error as e:
-                    if port_offset == max_attempts - 1:
-                        logger.error(f"No s'ha pogut crear el socket RTP després de {max_attempts} intents")
-                        raise
-                    continue
-            """
 
             # Crear i enviar la petició SETUP al servidor
             self.send_request("SETUP")
 
             # Rebre la resposta del servidor
-            response = self.recive_response()
+            response = self.receive_response()
 
             if "200 OK" in response:
 
-                self.create_rpt_socket()
+                self.create_rtp_socket()
                 
                 # Iniciar el thread RTP per rebre paquets
-                # self.rtp_thread = threading.Thread(target=self.receive_rtp)
-                # self.rtp_thread.start()
+                #self.rtp_thread = threading.Thread(target=self.receive_rtp)
+                #self.rtp_thread.start()
 
                 self.catch_sesion_number(response)
 
@@ -239,7 +223,7 @@ class Client(object):
         self.rtsp_sock.sendall(request.encode())
         logger.debug(request)
 
-    def recive_response(self):
+    def receive_response(self):
         # Rebre la resposta del servidor
         response = self.rtsp_sock.recv(4096).decode()
         logger.debug(f"Resposta rebuda del servidor: {response}")
@@ -260,7 +244,7 @@ class Client(object):
         logger.info(f"{buton_pressed} correcte")
         self.text["text"] = f'{buton_pressed} completat'
         
-    def create_rpt_socket(self):
+    def create_rtp_socket(self):
 
         # Crear i vincular el socket RTP amb SO_REUSEADDR
         self.rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -268,9 +252,9 @@ class Client(object):
         self.rtp_sock.settimeout(0.5)  # Afegim un timeout de 0.5 segons
 
         # Vincular el socket a la IP i port especificats
-        self.rtp_sock.bind((self.options.destination, self.options.udp_port))
+        self.rtp_sock.bind((self.options.host, self.options.udp_port))
         logger.debug(f"Socket RTP creat i vinculat a "
-                    f"{self.options.destination}:{self.options.udp_port}")
+                    f"{self.options.host}:{self.options.udp_port}")
         
     def catch_sesion_number(self, response):
 
@@ -350,20 +334,16 @@ class Client(object):
         self.num_seq += 1
         self.send_request("PLAY")
 
-        response = self.recive_response()
+        response = self.receive_response()
 
         if "200 OK" in response:
+            
             
             self.rtp_thread = threading.Thread(target=self.receive_rtp)
             self.rtp_thread.start()
 
             # Canviar l'estat a PLAYING
-            if self.state.transition("PLAY"):
-                logger.debug(f"Estat canviat a: {self.state.get_state()}")
-            else:
-                logger.error("Error canviant l'estat a PLAYING.")
-            logger.info("Play correcte")
-            self.text["text"] = "Play button clicked"
+            self.change_state("PLAY")
         else:
             logger.error("Play fallit")
             return
@@ -405,16 +385,12 @@ class Client(object):
 
         self.send_request("PAUSE")
 
-        response = self.recive_response()
+        response = self.receive_response()
 
         if "200 OK" in response:
             self.running = False  # Atura el thread RTP
-            if self.state.transition("PAUSE"):
-                logger.debug(f"Estat canviat a: {self.state.get_state()}")
-            else:
-                logger.error("Error canviant l'estat a READY.")
-            logger.info("Pause correcte")
-            self.text["text"] = "Pause button clicked"
+            
+            self.change_state("PAUSE")
         else:
             logger.error("Pause fallit")
             return
@@ -431,7 +407,7 @@ class Client(object):
 
         self.send_request("TEARDOWN")
 
-        response = self.recive_response()
+        response = self.receive_response()
 
         if "200 OK" in response:
             self.running = False  # Atura el thread RTP
@@ -442,38 +418,11 @@ class Client(object):
                 logger.debug("Socket RTP tancat")
 
             # Reinicia les variables del client
-            self.num_seq = 0
-            self.session = None
-            self.initial_timestamp = None
-            self.start_time = None
-            self.last_seq_num = -1  
-            self.packets_lost = 0  
-            self.packets_received = 0  
+            self. init_packet_control()
+            self.init_rtsp_control()
 
             # Canviar l'estat a INIT
-            if self.state.transition("TEARDOWN"):
-                logger.debug(f"Estat canviat a: {self.state.get_state()}")
-            else:
-                logger.error("Error canviant l'estat a INIT.")
-                self.error_proces()
-                logger.debug("Client reiniciat correctament")
-            logger.info("Teardown correcte")
-            self.text["text"] = "Teardown button clicked"
+            self.change_state("TEARDOWN")
         else:
             logger.error("Teardown fallit")
             return
-    
-    def error_proces(self):
-        self.num_seq = 0
-        self.session = None
-        self.initial_timestamp = None
-        self.start_time = None
-        self.last_seq_num = -1  
-        self.packets_lost = 0  
-        self.packets_received = 0 
-        self.running = False
-        if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
-            self.rtp_thread.join(timeout=2.0)  # Esperar màxim 2 segons
-        if hasattr(self, 'rtp_sock'):
-            self.rtp_sock.close()
-        self.state = "INIT"

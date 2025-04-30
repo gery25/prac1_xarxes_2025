@@ -8,7 +8,7 @@ from udpdatagram import UDPDatagram
 
 
 class ClientHandler (threading.Thread):
-    def __init__(self, client_socket, client_address):
+    def __init__(self, client_socket, client_address, options):
         super().__init__() # cridar al constructor de la superclase Thread
         self.client_socket = client_socket
         self.client_address = client_address
@@ -16,6 +16,9 @@ class ClientHandler (threading.Thread):
         self.num_seq = 0
         self.client_port_udp = None
         self.socketudp = None
+        self.frame_number = 0
+        self.max_frames = options.max_frames
+        self.frames_rate = options.frame_rate
         self.state = State_machine()
 
 
@@ -135,13 +138,10 @@ class ClientHandler (threading.Thread):
     def play_video(self):
         """Reprodueix el vídeo enviant frames via UDP."""
         self.running = True
-        while self.running:
+        while self.running and (self. max_frames == None or self.frame_number < self.max_frames):
             if not self.send_udp_frame():  # Comprova si el vídeo ha acabat
                 logger.info("Vídeo finalitzat")
                 self.running = False
-                # Notificar al client que el vídeo ha acabat
-                end_message = f"RTSP/1.0 205 END\r\nCSeq: {self.num_seq}\r\nSession: {self.session}\r\n"
-                self.client_socket.sendall(end_message.encode())
                 break
 
     def handle_pause(self, data):
@@ -206,7 +206,7 @@ class ClientHandler (threading.Thread):
                                         (self.client_address[0], 
                                         int(self.client_port_udp)))
                 
-                time.sleep(1/25)  # Control de velocitat de reproducció
+                time.sleep(1/self.frames_rate)  # Control de velocitat de reproducció
                 return True
                 
             except Exception as e:

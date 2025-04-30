@@ -65,7 +65,27 @@ def cli(ctx, debug, debug_level, debug_file, debug_filename):
     show_default=True,
     type=int
 )
-def server(ctx, port):
+@click.option(
+    "-h",
+    "--host",
+    help="IP Address for RTSP (TCP)",
+    show_default=True,
+    default="127.0.0.1",
+)
+@click.option(
+    "--max-frames",
+    help="RTSP port (TCP)",
+    default=None,
+    type=int
+)
+@click.option(
+    "--frame-rate",
+    help="Frame rate to stream (FPS) ",
+    default=25,
+    show_default=True,
+    type=int
+)
+def server(ctx, port, host, max_frames, frame_rate):
     """
     Start an RTSP server streaming video.
 
@@ -74,7 +94,8 @@ def server(ctx, port):
     port (default is 4321).
     """
     logger.info("Server xarxes 2025 video streaming")
-    server = Server(port)
+    options = optparse.Values({"port": port, "host": host, "max_frames": max_frames, "frame_rate" : frame_rate})
+    server = Server(options)
 
 
 @cli.command(name="client")
@@ -87,26 +108,28 @@ def server(ctx, port):
 @click.option(
     "-p",
     "--port",
-    help="RTSP port (TCP)",
+    help=" RTSP port (TCP) Server",
     default=4321,
     show_default=True,
     type=int
 )
 @click.option(
-    "-d",
-    "--destination",
-    help="RTSP server destination IP address",
+    "-h",
+    "--host",
+    help=" IP Address for RTSP server to connect (TCP)",
+    show_default=True,
     default="127.0.0.1"
 )
 @click.option(
     "-u",
-    "--udp_port",
-    help="port udp for RTP",
+    "--udp-port",
+    help="RTP port (UDP) Client",
+    show_default=True,
     default= 25000,
     type=int
 )
 
-def client(ctx, videofile, port, destination, udp_port):
+def client(ctx, videofile, port, host, udp_port):
     """
     Start an RTSP client streaming video.
 
@@ -115,6 +138,6 @@ def client(ctx, videofile, port, destination, udp_port):
     port (default is 4321).
     """
     logger.info("Client xarxes 2025 video streaming")
-    options = optparse.Values({"destination": destination, "port": port, "filename": videofile, "udp_port" : udp_port})
+    options = optparse.Values({"host": host, "port": port, "filename": videofile, "udp_port" : udp_port})
     client = Client(options)
     client.root.mainloop()

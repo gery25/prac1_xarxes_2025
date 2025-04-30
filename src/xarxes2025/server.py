@@ -9,7 +9,7 @@ from videoprocessor import VideoProcessor
 
 class Server(object):
     
-    def __init__(self, port):       
+    def __init__(self, options):       
         """
         Initialize a new VideoStreaming server.
 
@@ -18,7 +18,8 @@ class Server(object):
         self.insocks = []
         self.outsocks = []
         self.addres = {}
-        self.port = port
+        self.port = options.port
+        self.options = options
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.insocks.append(self.sock)
         self.sock.bind(("", self.port))
@@ -43,7 +44,7 @@ class Server(object):
                             logger.debug(f"Nova connexió des de {addr}")
 
                             # Crear un thread per gestionar aquest client
-                            client_handler = ClientHandler(newsocket, addr)
+                            client_handler = ClientHandler(newsocket, addr, self.options)
                             client_handler.start()
                         else:
                             # Si un client es desconnecta, eliminem el seu socket
