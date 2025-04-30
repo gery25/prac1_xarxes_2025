@@ -102,7 +102,8 @@ def server(ctx, port):
     "-u",
     "--udp_port",
     help="port udp for RTP",
-    default="25000"
+    default= 25000,
+    type=int
 )
 
 def client(ctx, videofile, port, destination, udp_port):
