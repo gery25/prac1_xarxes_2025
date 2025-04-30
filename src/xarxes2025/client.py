@@ -189,10 +189,6 @@ class Client(object):
             if "200 OK" in response:
 
                 self.create_rtp_socket()
-                
-                # Iniciar el thread RTP per rebre paquets
-                #self.rtp_thread = threading.Thread(target=self.receive_rtp)
-                #self.rtp_thread.start()
 
                 self.catch_sesion_number(response)
 
@@ -267,62 +263,6 @@ class Client(object):
                 break
 
 
-    def receive_rtp(self):
-        """
-        Rep paquets RTP i processa els frames de vídeo.
-        """
-
-        self.running = True
-        frame_buffer = bytearray()  # Buffer per acumular fragments
-        current_frame_num = -1
-
-        while self.running:
-            try:
-                data, _ = self.rtp_sock.recvfrom(65536)
-                datagram = UDPDatagram(0, b"")
-                datagram.decode(data)
-
-                # Gestió de número de seqüència
-                self.current_seq_num = datagram.get_seqnum()
-                
-                # Si és un nou frame
-                if current_frame_num != self.current_seq_num:
-                    # Processar el frame anterior si existeix
-                    if len(frame_buffer) > 0:
-                        self.updateMovie(frame_buffer)
-                    frame_buffer = bytearray()
-                    current_frame_num = self.current_seq_num
-
-                # Afegir el fragment al buffer
-                frame_buffer.extend(datagram.get_payload())
-
-                # Gestió de pèrdua de paquets
-                if self.last_seq_num != -1:
-                    expected_seq_num = (self.last_seq_num + 1) % 65536
-                    if self.current_seq_num != expected_seq_num:
-                        lost = (self.current_seq_num - expected_seq_num) % 65536
-                        if lost < 100:  # Ignorem valors absurds
-                            self.packets_lost += lost
-                            logger.warning(f"Paquets perduts: {lost} "
-                                           f"(esperàvem {expected_seq_num}, "
-                                           f"rebut {self.current_seq_num})")
-
-                self.last_seq_num = self.current_seq_num
-                self.packets_received += 1
-
-                # Actualitzar estadístiques
-                self.text["text"] = (f'Playing: Seq Num {self.current_seq_num} | '
-                                    f'Perduts: {self.packets_lost} | '
-                                    f'OK: {self.packets_received}')
-
-            except socket.timeout:
-                continue
-            except socket.error as e:
-                logger.error(f"Error rebent dades: {e}")
-                break
-
-        logger.debug("Thread RTP finalitzat")
-
     def ui_play_event(self):
         """
         Gestiona l'esdeveniment del botó Play.
@@ -347,32 +287,132 @@ class Client(object):
         else:
             logger.error("Play fallit")
             return
-        
+
+    def receive_rtp(self):
+        """
+        Rep paquets RTP i processa els frames de vídeo.
+        """
+        self._init_rtp_reception()
+    
+        while self.running:
+            try:
+                datagram = self._receive_datagram()
+                if datagram:
+                    self._process_datagram(datagram, self.frame_buffer, self.current_frame_num)
+                    self._update_statistics()
+            except socket.timeout:
+                continue
+            except socket.error as e:
+                logger.error(f"Error rebent dades: {e}")
+                break
+
+        logger.debug("Thread RTP finalitzat")
+
+    def _init_rtp_reception(self):
+        """
+        Inicialitza les variables necessàries per la recepció RTP.
+        """
+        self.running = True
+        self.frame_buffer = bytearray()
+        self.current_frame_num = -1
+
+    def _receive_datagram(self):
+        """
+        Rep i descodifica un datagrama RTP.
+    
+        Returns:
+            UDPDatagram: El datagrama rebut i descodificat, o None si hi ha error
+        """
+        try:
+            data, _ = self.rtp_sock.recvfrom(65536)
+            datagram = UDPDatagram(0, b"")
+            datagram.decode(data)
+            return datagram
+        except Exception as e:
+            logger.error(f"Error rebent datagrama: {e}")
+            return None
+
+    def _process_datagram(self, datagram, frame_buffer, current_frame_num):
+        """
+        Processa un datagrama RTP rebut.
+    
+        Args:
+            datagram: El datagrama a processar
+            frame_buffer: Buffer on s'acumulen els fragments
+            current_frame_num: Número del frame actual
+        """
+        self.current_seq_num = datagram.get_seqnum()
+    
+        # Si és un nou frame
+        if current_frame_num != self.current_seq_num:
+            self._handle_new_frame(frame_buffer)
+            self.current_frame_num = self.current_seq_num
+
+        # Afegir el fragment al buffer
+        frame_buffer.extend(datagram.get_payload())
+    
+        self._check_packet_loss()
+
+        self.last_seq_num = self.current_seq_num
+        self.packets_received += 1
+
+    def _handle_new_frame(self, frame_buffer):
+        """Gestiona l'arribada d'un nou frame.
+    
+        Args:
+            frame_buffer: Buffer amb les dades del frame anterior
+        """
+        if len(frame_buffer) > 0:
+            self.updateMovie(frame_buffer)
+            frame_buffer.clear()
+
+    def _check_packet_loss(self):
+        """
+        Comprova si s'han perdut paquets i actualitza les estadístiques.
+        """
+        expected_seq_num = 0
+        if self.last_seq_num != -1:
+            expected_seq_num = (self.last_seq_num + 1) % 65536
+            if self.current_seq_num != expected_seq_num:
+                lost = (self.current_seq_num - expected_seq_num) % 65536
+                if lost < 100:  # Ignorem valors absurds
+                    self.packets_lost += lost
+                    logger.warning(f"Paquets perduts: {lost} "
+                                    f"(esperàvem {expected_seq_num}, "
+                                    f"rebut {self.current_seq_num})")
+
+
+    def _update_statistics(self):
+        """
+        Actualitza les estadístiques mostrades a la UI.
+        """
+        self.text["text"] = (f'Playing: Seq Num {self.current_seq_num} | '
+                                    f'Perduts: {self.packets_lost} | '
+                                    f'OK: {self.packets_received}')
+
     
     def updateMovie(self, data):
         """
-        Processa un frame complet.
-        
+        Processa i mostra un frame complet.
+    
         Args:
-            frame_buffer (bytearray): Buffer amb les dades del frame
+            data (bytearray): Buffer amb les dades del frame en format JPEG
         """
         try:
-            # Verificar que és un JPEG vàlid
             with io.BytesIO(data) as bio:
+                # Obrir i verificar la imatge
                 img = Image.open(bio)
-                img.verify()
-                
-            # Si la verificació és correcta, mostrar la imatge
-            with io.BytesIO(data) as bio:
-                img = Image.open(bio)
+                img.load()  # Això verifica i carrega la imatge alhora
+            
+                # Convertir a format Tkinter
                 photo = ImageTk.PhotoImage(img)
-                self.movie.configure(image = photo, height=380)
+                self.movie.configure(image=photo, height=380)
                 self.movie.photo_image = photo
-                # logger.debug(f"Frame mostrat correctament: {len(data)} bytes")
-                
+            
+                # logger.debug(f"Frame mostrat correctament: {len(data)} bytes")    
         except Exception as e:
             logger.error(f"Error processant frame: {e}")
-
+        
     def ui_pause_event(self):
         """
         Gestiona l'esdeveniment del botó Pause.
@@ -413,6 +453,7 @@ class Client(object):
             self.running = False  # Atura el thread RTP
             if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
                 self.rtp_thread.join(timeout=2.0)  # Espera que el thread RTP acabi
+
             if hasattr(self, 'rtp_sock'):
                 self.rtp_sock.close()  # Tanca el socket RTP
                 logger.debug("Socket RTP tancat")
