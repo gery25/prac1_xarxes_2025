@@ -1,8 +1,6 @@
-import sys, optparse, threading, time
-from PIL import ImageFile
+import sys, threading
 from tkinter import Tk, Label, Button, W, E, N, S
 from tkinter import messagebox
-import tkinter as tk
 
 from udpdatagram import UDPDatagram
 from loguru import logger
@@ -17,36 +15,49 @@ _program__ = "client.py"
 __version__ = '0.0.1'
 __author__ = 'Gerard Safont <gsc23@alumnes.udl.cat>'
 
-# Aquesta classe representa un client de streaming de vídeo que utilitza RTP i RTSP.
+# Video streaming client implementation using RTP and RTSP protocols.
 class Client(object):
+    """
+    RTP/RTSP video streaming client implementation.
+    Handles video playback and communication with the streaming server.
+    """
+
     def __init__(self, options):
         """
-        Inicialitza un nou client de streaming de vídeo.
+        Initialize a new video streaming client.
+
+        Args:
+            options: Configuration options for the client including:
+                    - filename: Video file to stream
+                    - host: Server hostname/IP
+                    - port: Server RTSP port
+                    - udp_port: Local UDP port for RTP
         """
-        # Atributs de control de paquets
+        # Packet control attributes
         self.init_packet_control()
         
-        # Atributs de control RTSP
+        # RTSP control attributes
         self.init_rtsp_control()
         
-        # Atributs de sockets i thread
+        # Socket and thread attributes
         self.init_socket()
         
-        # Atributs d'UI
+        # UI attributes
         self.init_ui()
         
-        # Inicialització
+        # Initialization
         self.state = State_machine()
         self.options = options
         
-        logger.debug(f"Client creat amb estat inicial: {self.state.get_state()}" )
+        logger.debug(f"Client created with initial state: {self.state.get_state()}")
         
         self._setup_connection()
         self.create_ui()
 
     def init_packet_control(self):
         """
-        Inicialitza els atributs de control de paquets.
+        Initialize packet control attributes for RTP statistics tracking.
+        Sets up sequence numbers and packet counters.
         """
         self.initial_timestamp = None
         self.start_time = None
@@ -57,7 +68,8 @@ class Client(object):
 
     def init_rtsp_control(self):
         """
-        Inicialitza els atributs de control RTSP.
+        Initialize RTSP control attributes.
+        Sets up sequence number, session ID and running state.
         """
         self.num_seq = 0
         self.session = None
@@ -65,7 +77,8 @@ class Client(object):
 
     def init_socket(self):
         """
-        Inicialitza els atributs de sockets i thread.
+        Initialize socket and thread attributes.
+        Sets up RTSP socket, RTP socket and RTP thread references.
         """
         self.rtsp_sock = None
         self.rtp_sock = None
@@ -81,53 +94,69 @@ class Client(object):
 
     def _setup_connection(self):
         """
-        Configura la connexió inicial amb el servidor.
+        Configure initial server connection.
+        Creates and connects RTSP socket to specified server.
+        Logs connection parameters for debugging.
         """
         try:
             self.rtsp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.rtsp_sock.connect((self.options.host, self.options.port))
             logger.debug(
-                f"Paràmetres del client: fitxer: {self.options.filename},"
+                f"Client parameters: file: {self.options.filename},"
                 f"port: {self.options.port}, host: {self.options.host}"
             )
         except socket.error as e:
-            logger.error(f"Error connectant amb el servidor: {e}")
-            messagebox.showerror("Error de Connexió", str(e))
+            logger.error("Error connecting to server: %s", e)
+            messagebox.showerror("Connection Error", str(e))
             raise
 
     def create_ui(self):
         """
-        Crea la interfície gràfica d'usuari per al client.
+        Create graphical user interface.
 
-        Aquesta funció configura la finestra, els botons i les etiquetes.
+        Sets up main window with:
+        - Title and close handler
+        - Control buttons (Setup, Play, Pause, Teardown)
+        - Video display label
+        - Status text label
+        Returns configured root window.
         """
         self.root = Tk()
-        self.root.wm_title("RTP Client")  # Títol de la finestra.
-        self.root.protocol("WM_DELETE_WINDOW", self.ui_close_window)  # Acció en tancar la finestra.
+        self.root.wm_title("RTP Client")  # Window title
+        self.root.protocol("WM_DELETE_WINDOW", self.ui_close_window)  # Window close handler
 
-        # Crear botons per a les accions Setup i Play.
+        # Create control buttons
         self.setup = self._create_button("Setup", self.ui_setup_event, 0, 0)
         self.start = self._create_button("Play", self.ui_play_event, 0, 1)
         self.pause = self._create_button("Pause", self.ui_pause_event, 0, 2)
         self.teardown = self._create_button("Teardown", self.ui_teardown_event, 0, 3)
 
-        # Crear una etiqueta per mostrar el vídeo.
+        # Create video display label
         self.movie = Label(self.root, height=29)
         self.movie.grid(row=1, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
 
-        # Crear una etiqueta per mostrar missatges de text.
+        # Create status text label
         self.text = Label(self.root, height=3)
         self.text.grid(row=2, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
 
         return self.root
 
+
     def _create_button(self, text, command, row=0, column=0, width=20, padx=3, pady=3):
         """
-        Crea un botó amb el text, la funció associada i les opcions de disseny especificades.
+        Create a UI button with specified parameters.
 
-        :param str text: Text del botó.
-        :param callable command: Funció a executar en fer clic.
-        :return: El widget del botó.
+        Args:
+            text (str): Button label text
+            command (callable): Function to execute on click
+            row (int): Grid row position
+            column (int): Grid column position
+            width (int): Button width
+            padx (int): Horizontal padding
+            pady (int): Vertical padding
+
+        Returns:
+            Button: Configured Tkinter button widget
         """
         button = Button(self.root, width=width, padx=padx, pady=pady)
         button["text"] = text
@@ -137,138 +166,198 @@ class Client(object):
 
     def ui_close_window(self):
         """
-        Tanca la finestra i atura el thread RTP de manera segura.
+        Close window and safely stop RTP thread.
+        
+        Steps:
+        1. Confirm with user
+        2. Stop RTP thread
+        3. Close sockets
+        4. Destroy window
+        5. Exit application
         """
         try:
-            # 1. Aturar el bucle del thread
-            self.running = False
-            logger.debug("Aturant el thread RTP...")
+            # Ask the user if they want to close
+            if messagebox.askokcancel("Quit?", 
+                                "Close application?"):
 
-            # 2. Esperar que el thread acabi (amb timeout)
-            if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
-                self.rtp_thread.join(timeout=2.0)  # Esperar màxim 2 segons
-                if self.rtp_thread.is_alive():
-                    logger.warning("No s'ha pogut aturar el thread RTP correctament")
+                # 1. Stop the thread loop
+                self.running = False
+                logger.debug("RTP thread stopping...")
 
-            # 3. Tancar els sockets
-            if hasattr(self, 'rtp_sock'):
-                self.rtp_sock.close()
-                logger.debug("Socket RTP tancat")
-            if hasattr(self, 'sock'):
-                self.rtsp_sock.close()
-                logger.debug("Socket RTSP tancat")
+                # 2. Wait for the thread to end (with timeout)
+                if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
+                    self.rtp_thread.join(timeout=2.0)  # Esperar màxim 2 segons
+                    if self.rtp_thread.is_alive():
+                        logger.warning("Could not stop RTP thread properly")
 
-            # 4. Destruir la finestra
-            self.root.destroy()
-            logger.debug("Finestra tancada")
+                # 3. Close the sockets
+                if hasattr(self, 'rtp_sock'):
+                    self.rtp_sock.close()
+                    logger.debug("RTP socket closed")
+                if hasattr(self, 'rtsp_sock'):
+                    self.rtsp_sock.close()
+                    logger.debug("RTSP socket closed")
 
-            # 5. Sortir del programa
-            logger.info("Client aturat correctament")
-            sys.exit(0)
+                # 4. Destroy the window
+                self.root.destroy()
+                logger.debug("Window closed")
+
+                # 5. Get out of the program
+                logger.info("Client stopped correctly")
+                sys.exit(0)
         except Exception as e:
-            logger.error(f"Error tancant el client: {e}")
+            logger.error(f"Error closing the customer: {e}")
             sys.exit(1)
 
     def ui_setup_event(self):
         """
-        Gestiona l'esdeveniment del botó Setup.
+        Handle Setup button event.
+        
+        Verifies client is in INIT state.
+        Sends SETUP request and configures RTP socket.
+        Updates client state on success.
         """
         if self.state.get_state() != "INIT":
-            logger.error("El client no està en estat INIT. No es pot fer SETUP.")
+            logger.error("Client not in INIT state. Cannot SETUP.")
             return
 
         self.num_seq += 1
         try:
 
-            # Crear i enviar la petició SETUP al servidor
+            # Create and send the SETUP request to the server
             self.send_request("SETUP")
 
-            # Rebre la resposta del servidor
+            # Receive the server response
             response = self.receive_response()
 
             if "200 OK" in response:
 
                 self.create_rtp_socket()
 
-                self.catch_sesion_number(response)
+                self.extract_session_id(response)
 
-                # Canviar l'estat a READY
+                # Change the state to READY
                 self.change_state("SETUP")
+            elif "404" in response:
+                logger.error('Setup failed')
+                messagebox.showerror("Error 404 File Not Found", 
+                                     f"File Not Found: {self.options.filename}")
+                self.ui_close_window()
             else:
-                logger.error('Setup fallit')
+                logger.error('Setup failed')
                 if hasattr(self, 'rtp_sock'):
                     self.rtp_sock.close()
                 return
-
         except socket.error as e:
-            logger.error(f'Error en el setup: {e}')
+            logger.error("Error during setup: %s", e)
             if hasattr(self, 'rtp_sock'):
                 self.rtp_sock.close()
             return
         
-    def send_request(self, buton_pressed):
-        # Crear i enviar la petició SETUP al servidor
+    def send_request(self, command_type):
+        """
+        Send an RTSP request to the server.
 
-        request = f"{buton_pressed} {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\n"
+        Args:
+            command_type (str): Type of RTSP command (SETUP/PLAY/PAUSE/TEARDOWN)
 
-        if buton_pressed == "SETUP":
-            request += f"Transport: RTP/UDP; client_port= {self.options.udp_port}\r\n"
+        Builds and sends the appropriate RTSP request based on the command type.
+        For SETUP includes transport information, for others includes session ID.
+        """
+        request = f"{command_type} {self.options.filename} RTSP/1.0\r\nCSeq: {self.num_seq}\r\n"
+
+        if command_type == "SETUP":
+            request += f"Transport: RTP/UDP; client_port= {self.options.udp_port}\r\n\r\n"
         else:
-            request += f"Session: {self.session}\r\n"
+            request += f"Session: {self.session}\r\n\r\n"
         
         self.rtsp_sock.sendall(request.encode())
         logger.debug(request)
 
     def receive_response(self):
-        # Rebre la resposta del servidor
+        """
+        Receive and process RTSP response from server.
+
+        Returns:
+            str: Decoded response from server
+
+        Reads response data from RTSP socket and logs it for debugging.
+        """
         response = self.rtsp_sock.recv(4096).decode()
-        logger.debug(f"Resposta rebuda del servidor: {response}")
+        logger.debug(f"Answer received from the server: {response}")
         return response
 
-    def change_state(self, buton_pressed):
-        
+    def change_state(self, command_type):
+        """
+        Handle state transitions based on RTSP commands.
+
+        Args:
+            command_type (str): RTSP command that triggered the state change
+
+        Updates client state machine and UI feedback.
+        Logs state changes and any transition errors.
+        """
         states = {"SETUP": "READY",
                  "PLAY": "PLAYING",
                  "PAUSE": "READY",
                  "TEARDOWN": "INIT"}
 
-        if self.state.transition(buton_pressed):
+        if self.state.transition(command_type):
             logger.debug(f"Estat canviat a: {self.state.get_state()}")
         else:
-            logger.error(f"Error canviant l'estat a {states[buton_pressed]}.")
+            logger.error(f"Error changing the state to {states[command_type]}.")
             return
-        logger.info(f"{buton_pressed} correcte")
-        self.text["text"] = f'{buton_pressed} completat'
+        logger.info(f"{command_type} successful")
+        self.text["text"] = f'{command_type} completed'
         
     def create_rtp_socket(self):
+        """
+        Create and configure RTP socket for video streaming.
 
-        # Crear i vincular el socket RTP amb SO_REUSEADDR
+        Sets up UDP socket with:
+        - SO_REUSEADDR option
+        - 0.5 second timeout
+        - Binds to specified host and port
+        """
+        # Create and link the socket RTP and SO_REUSEADDR
         self.rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.rtp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.rtp_sock.settimeout(0.5)  # Afegim un timeout de 0.5 segons
+        self.rtp_sock.settimeout(0.5)  # Add a timeout of 0.5 seconds
 
-        # Vincular el socket a la IP i port especificats
+        # Link the socket to the specified IP and port
         self.rtp_sock.bind((self.options.host, self.options.udp_port))
-        logger.debug(f"Socket RTP creat i vinculat a "
-                    f"{self.options.host}:{self.options.udp_port}")
+        logger.debug(f"RTP socket created and bound to "
+                     f"{self.options.host}:{self.options.udp_port}")
         
-    def catch_sesion_number(self, response):
+    def extract_session_id(self, response):
+        """
+        Extract session ID from RTSP response.
 
-        # Processar la resposta per obtenir la sessió
+        Args:
+            response (str): Full RTSP response from server
+
+        Parses response headers to find and store session identifier.
+        Required for subsequent RTSP requests.
+        """
+        # Process the answer to get the session
         lines = response.splitlines()
         for line in lines:
             if line.startswith("Session:"):
                 self.session = line.split(":")[1].strip()
-                logger.debug(f"ID de sessió: {self.session}")
+                logger.debug(f"Session ID: {self.session}")
                 break
 
 
     def ui_play_event(self):
         """
-        Gestiona l'esdeveniment del botó Play.
+        Handle Play button event.
+
+        Verifies client is in READY state.
+        Sends PLAY request and starts RTP reception thread.
+        Updates client state on success.
         """
         if self.state.get_state() != "READY":
-            logger.error("El client no està en estat READY. No es pot fer PLAY.")
+            logger.error("Client not in READY state. Cannot PLAY.")
             return
 
         self.num_seq += 1
@@ -282,15 +371,19 @@ class Client(object):
             self.rtp_thread = threading.Thread(target=self.receive_rtp)
             self.rtp_thread.start()
 
-            # Canviar l'estat a PLAYING
+            # Change the state to PLAYING
             self.change_state("PLAY")
         else:
-            logger.error("Play fallit")
+            logger.error("Play failed")
             return
 
     def receive_rtp(self):
         """
-        Rep paquets RTP i processa els frames de vídeo.
+        Main RTP reception loop running in separate thread.
+
+        Continuously receives RTP packets until stopped.
+        Processes video frames and updates display.
+        Handles network timeouts and errors.
         """
         self._init_rtp_reception()
     
@@ -303,14 +396,19 @@ class Client(object):
             except socket.timeout:
                 continue
             except socket.error as e:
-                logger.error(f"Error rebent dades: {e}")
+                logger.error(f"Error receiving data: {e}")
                 break
 
         logger.debug("Thread RTP finalitzat")
 
     def _init_rtp_reception(self):
         """
-        Inicialitza les variables necessàries per la recepció RTP.
+        Initialize RTP reception state.
+
+        Sets up:
+        - Running flag
+        - Frame buffer
+        - Frame numbering
         """
         self.running = True
         self.frame_buffer = bytearray()
@@ -318,10 +416,15 @@ class Client(object):
 
     def _receive_datagram(self):
         """
-        Rep i descodifica un datagrama RTP.
-    
+        Receive and decode an RTP datagram.
+
         Returns:
-            UDPDatagram: El datagrama rebut i descodificat, o None si hi ha error
+            UDPDatagram: Decoded datagram object, or None if error occurs
+
+        - Sets large buffer size for receiving
+        - Creates empty datagram
+        - Decodes received data
+        - Handles network and decoding errors
         """
         try:
             data, _ = self.rtp_sock.recvfrom(65536)
@@ -329,26 +432,31 @@ class Client(object):
             datagram.decode(data)
             return datagram
         except Exception as e:
-            logger.error(f"Error rebent datagrama: {e}")
+            # logger.error(f"Error rebent datagrama: {e}")
             return None
 
     def _process_datagram(self, datagram, frame_buffer, current_frame_num):
         """
-        Processa un datagrama RTP rebut.
-    
+        Process a received RTP datagram.
+
         Args:
-            datagram: El datagrama a processar
-            frame_buffer: Buffer on s'acumulen els fragments
-            current_frame_num: Número del frame actual
+            datagram (UDPDatagram): Received RTP datagram
+            frame_buffer (bytearray): Buffer for accumulating frame data
+            current_frame_num (int): Current frame sequence number
+
+        - Updates sequence number
+        - Handles frame boundaries
+        - Accumulates frame data
+        - Updates packet statistics
         """
         self.current_seq_num = datagram.get_seqnum()
     
-        # Si és un nou frame
+        # If is a new frame
         if current_frame_num != self.current_seq_num:
             self._handle_new_frame(frame_buffer)
             self.current_frame_num = self.current_seq_num
 
-        # Afegir el fragment al buffer
+        # Add to the buffer
         frame_buffer.extend(datagram.get_payload())
     
         self._check_packet_loss()
@@ -357,10 +465,15 @@ class Client(object):
         self.packets_received += 1
 
     def _handle_new_frame(self, frame_buffer):
-        """Gestiona l'arribada d'un nou frame.
-    
+        """
+        Process arrival of a new video frame.
+
         Args:
-            frame_buffer: Buffer amb les dades del frame anterior
+            frame_buffer (bytearray): Buffer containing previous frame data
+
+        If buffer contains data:
+        - Displays the frame
+        - Clears buffer for next frame
         """
         if len(frame_buffer) > 0:
             self.updateMovie(frame_buffer)
@@ -368,57 +481,80 @@ class Client(object):
 
     def _check_packet_loss(self):
         """
-        Comprova si s'han perdut paquets i actualitza les estadístiques.
+        Check for lost RTP packets and update statistics.
+
+        Calculates expected sequence number.
+        Detects gaps in sequence numbers.
+        Updates lost packet counter.
+        Logs warning messages for packet loss.
+        Ignores unreasonable loss values (>100 packets).
         """
         expected_seq_num = 0
         if self.last_seq_num != -1:
             expected_seq_num = (self.last_seq_num + 1) % 65536
             if self.current_seq_num != expected_seq_num:
                 lost = (self.current_seq_num - expected_seq_num) % 65536
-                if lost < 100:  # Ignorem valors absurds
+                if lost < 100:  
                     self.packets_lost += lost
-                    logger.warning(f"Paquets perduts: {lost} "
-                                    f"(esperàvem {expected_seq_num}, "
-                                    f"rebut {self.current_seq_num})")
+                    logger.warning(f"Lost packets: {lost} "
+                                   f"(expected {expected_seq_num}, "
+                                   f"received {self.current_seq_num})")
 
 
     def _update_statistics(self):
         """
-        Actualitza les estadístiques mostrades a la UI.
+        Update UI statistics display.
+
+        Shows:
+        - Current sequence number
+        - Number of lost packets
+        - Number of received packets
+        Updates text label with formatted statistics string.
         """
         self.text["text"] = (f'Playing: Seq Num {self.current_seq_num} | '
-                                    f'Perduts: {self.packets_lost} | '
-                                    f'OK: {self.packets_received}')
+                             f'Lost: {self.packets_lost} | '
+                             f'OK: {self.packets_received}')
 
     
     def updateMovie(self, data):
         """
-        Processa i mostra un frame complet.
-    
+        Process and display a video frame.
+
         Args:
-            data (bytearray): Buffer amb les dades del frame en format JPEG
+            data (bytearray): JPEG encoded frame data
+
+        - Creates BytesIO object from frame data
+        - Opens and verifies JPEG image
+        - Converts to Tkinter PhotoImage
+        - Updates UI label with new frame
+        - Handles image processing errors
         """
         try:
             with io.BytesIO(data) as bio:
-                # Obrir i verificar la imatge
+                # Open and verify image
                 img = Image.open(bio)
-                img.load()  # Això verifica i carrega la imatge alhora
+                img.load()  # Verify and load image at once
             
-                # Convertir a format Tkinter
+                # Convert to Tkinter format
                 photo = ImageTk.PhotoImage(img)
                 self.movie.configure(image=photo, height=380)
                 self.movie.photo_image = photo
             
                 # logger.debug(f"Frame mostrat correctament: {len(data)} bytes")    
         except Exception as e:
-            logger.error(f"Error processant frame: {e}")
+            logger.error(f"Error processing frame: {e}")
         
     def ui_pause_event(self):
         """
-        Gestiona l'esdeveniment del botó Pause.
+        Handle Pause button event.
+
+        Verifies client is in PLAYING state.
+        Sends PAUSE request to stop video streaming.
+        Stops RTP reception thread on success.
+        Updates client state to READY.
         """
         if self.state.get_state() != "PLAYING":
-            logger.error("El client no està en estat PLAYING. No es pot fer PAUSE.")
+            logger.error("Client not in PLAYING state. Cannot PAUSE.")
             return
 
         self.num_seq += 1
@@ -428,19 +564,27 @@ class Client(object):
         response = self.receive_response()
 
         if "200 OK" in response:
-            self.running = False  # Atura el thread RTP
+            self.running = False  # Stop RTP thread
             
             self.change_state("PAUSE")
         else:
-            logger.error("Pause fallit")
+            logger.error("Pause failed")
             return
 
     def ui_teardown_event(self):
         """
-        Gestiona l'esdeveniment del botó Teardown.
+        Handle Teardown button event.
+
+        Verifies client is in valid state (READY or PLAYING).
+        Sends TEARDOWN request to end streaming session.
+        Cleans up resources:
+        - Stops RTP thread
+        - Closes RTP socket
+        - Resets client state to INIT
+        - Reinitializes control variables
         """
         if self.state.get_state() not in ["READY", "PLAYING"]:
-            logger.error("El client no està en un estat vàlid per fer TEARDOWN.")
+            logger.error("Client not in valid state for TEARDOWN.")
             return
 
         self.num_seq += 1
@@ -450,20 +594,20 @@ class Client(object):
         response = self.receive_response()
 
         if "200 OK" in response:
-            self.running = False  # Atura el thread RTP
+            self.running = False  # Stop RTP thread
             if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
-                self.rtp_thread.join(timeout=2.0)  # Espera que el thread RTP acabi
+                self.rtp_thread.join(timeout=2.0)
 
             if hasattr(self, 'rtp_sock'):
                 self.rtp_sock.close()  # Tanca el socket RTP
-                logger.debug("Socket RTP tancat")
+                logger.debug("RTP socket closed")
 
-            # Reinicia les variables del client
+            # Reset client variables
             self. init_packet_control()
             self.init_rtsp_control()
 
-            # Canviar l'estat a INIT
+            # Change state to INIT
             self.change_state("TEARDOWN")
         else:
-            logger.error("Teardown fallit")
+            logger.error("Teardown failed")
             return
