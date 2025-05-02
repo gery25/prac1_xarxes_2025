@@ -226,10 +226,10 @@ Client options:
 - `--host`: Server IP address (default: localhost)
 - `--udp-port`: Local UDP port for RTP (default: 25000)
 
-## License
-
-[Your license here]
-
 ## Authors
 
 Gerard Safont <gsc23@alumnes.udl.cat>
+
+## Acknowledgments
+
+This project is based on the skeleton code from [xarxes2025](https://github.com/carlesm/xarxes2025.git) by Carles Mateu. The original codebase was used as a starting point and has been modified and enhanced to meet the requirements of this project.
