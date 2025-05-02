@@ -228,7 +228,7 @@ Client options:
 
 ## Authors
 
-Gerard Safont <gsc23@alumnes.udl.cat>
+Gerard Safont <gsc23@alumnes.udl.cat> or <gerymaps200515@gmail.com>
 
 ## Acknowledgments
 
