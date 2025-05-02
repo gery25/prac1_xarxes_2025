@@ -2,17 +2,17 @@ import sys, threading
 from tkinter import Tk, Label, Button, W, E, N, S
 from tkinter import messagebox
 
-from udpdatagram import UDPDatagram
+from xarxes2025.udpdatagram import UDPDatagram
 from loguru import logger
 
 from PIL import Image, ImageTk
 import io
 
 import socket
-from state_machine import State_machine
+from xarxes2025.state_machine import State_machine
 
 _program__ = "client.py"
-__version__ = '0.0.1'
+__version__ = '0.2.0'
 __author__ = 'Gerard Safont <gsc23@alumnes.udl.cat>'
 
 # Video streaming client implementation using RTP and RTSP protocols.

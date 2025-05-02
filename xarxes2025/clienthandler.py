@@ -1,8 +1,8 @@
 from loguru import logger
 import threading, socket, random, time
-from state_machine import State_machine
-from videoprocessor import VideoProcessor
-from udpdatagram import UDPDatagram
+from xarxes2025.state_machine import State_machine
+from xarxes2025.videoprocessor import VideoProcessor
+from xarxes2025.udpdatagram import UDPDatagram
 
 
 

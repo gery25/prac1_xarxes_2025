@@ -1,12 +1,10 @@
 import click
 import sys , optparse
-
+from pathlib import Path
 
 from loguru import logger
-
-
-from server import Server
-from client import Client
+from xarxes2025.server import Server
+from xarxes2025.client import Client
 
 
 @click.group()
@@ -101,7 +99,7 @@ def server(ctx, port, host, max_frames, frame_rate):
 @cli.command(name="client")
 @click.pass_context
 @click.argument("videofile", 
-    type=click.Path(), 
+    type=click.Path(exists=True, readable=True, path_type=Path), 
     required=False, 
     default="rick.webm"
 )

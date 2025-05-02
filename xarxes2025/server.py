@@ -1,6 +1,6 @@
 from loguru import logger
 import socket, select
-from clienthandler import ClientHandler
+from xarxes2025.clienthandler import ClientHandler
 
 class Server(object):
     """
