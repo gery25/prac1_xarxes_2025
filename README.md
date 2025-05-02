@@ -1,71 +1,235 @@
-# Practica de Xarxes 2025
+# Xarxes2025 Video Streaming
 
-Repositori amb exemples per la pràctica de Xarxes 2025 / UdL.
+A video streaming application using RTSP/RTP protocols implemented in Python.
 
+## Description
 
+This project implements a client-server video streaming solution using:
+- RTSP (Real Time Streaming Protocol) for session control
+- RTP (Real-time Transport Protocol) for video data transmission
+- UDP for video frame delivery
 
-# Developing with poetry
+## Requirements
 
-If you have poetry installed on your machine (I recommend using it with pyenv to have recent python versions without affecting the system),
-you can get the code (checkout from git or unzip the file).
+- Python >= 3.8.1
+- Poetry for dependency management
+- OpenCV for video processing
+- Pillow for image handling
+- Click for CLI interface
+- Loguru for logging
 
-## Update dependencies
+## Installation
 
-Inside the main directory:
+1. Assegura't de tenir les dependències del sistema:
+```bash
+sudo apt update
+sudo apt install python3 python3-pip python3-venv python3-dev
+```
 
-poetry sync 
+2. Instal·la Poetry:
+```bash
+curl -sSL https://install.python-poetry.org | python3 -
+```
 
-This will update the dependencies and install the libraries and this package.
+3. Clona el repositori:
+```bash
+git clone <repository-url>
+cd xarxes2025
+```
 
+4. Configura Poetry per crear l'entorn virtual al projecte:
+```bash
+poetry config virtualenvs.in-project true
+```
 
-## Run python or code
+5. Instal·la les dependències:
+```bash
+poetry install
+```
 
-You can run with the virtual environment with poetry:
+6. Verifica la instal·lació:
+```bash
+poetry run xarxes2025 --version
+```
 
-poetry run <command>
+### Resolució de problemes
 
-For example:
+Si tens errors amb Pillow o OpenCV:
+```bash
+sudo apt install libjpeg-dev zlib1g-dev libopencv-dev
+poetry install
+```
 
-poetry run python 
+Si tens problemes amb els permisos:
+```bash
+# Verifica els permisos dels fitxers de vídeo
+chmod 644 *.webm
+chmod 644 *.webp
+```
 
-Will run a python installment with the libraries you have added (click, loguru, Pillow, etc.)
+Si necessites reinstal·lar tot:
+```bash
+rm -rf .venv/
+rm -f poetry.lock
+poetry lock
+poetry install
+```
 
-Or, as it is configured the sample of code:
+## Usage
 
-poetry run xarxes2025
+1. Start the server:
+```bash
+# Basic usage
+poetry run xarxes2025 server
 
-Will run my code. 
+# With options
+poetry run xarxes2025 server --port 4321 --host localhost --max-frames 100 --frame-rate 25
+```
 
-If you have to add libraries, you can use:
+2. Start the client:
+```bash
+# Basic usage
+poetry run xarxes2025 client
 
-poetry add <libname>
+# With specific video file
+poetry run xarxes2025 client rick.webm
 
-All libraries you add, ask first.
+# With all options
+poetry run xarxes2025 client video.webm -p 4321 -h localhost -u 25000
+```
 
+### Debug Options
 
-# Code
+Both server and client support debug options:
+```bash
+# Enable debug logging
+poetry run xarxes2025 --debug client
 
-You have, in src/*py all the code. 
+# Set debug level
+poetry run xarxes2025 --debug --debug-level DEBUG client
 
-There you have:
+# Log to file
+poetry run xarxes2025 --debug --debug-file --debug-filename debug.log client
+```
 
-- cli.py  - Code to start server or client. Processes command line arguments with click.
-- server.py - Code for the server.
-- client.py - Code for the client, includes a minimal UI in TK. 
-- udpdatagram.py - Code to create an RTP datagram. Has missing code (gives error). You have to finish it.
-- videoprocessor.py - Code to process a videofile and encode it as a frame image. To be used for the project.
+## Project Structure
 
+```
+xarxes2025/
+├── __init__.py          # Package initialization and version
+├── __main__.py         # Entry point for CLI
+├── cli.py              # Command line interface implementation
+├── client.py           # RTSP client implementation
+├── clienthandler.py    # Server's client handler
+├── server.py           # RTSP server implementation
+├── state_machine.py    # RTSP state machine
+├── udpdatagram.py      # RTP packet handling
+├── videoprocessor.py   # Video frame processing
+├── artificial.webm     # Sample video file
+├── operating.webm      # Sample video file
+├── rick.webm          # Sample video file
+└── rick.webp          # Sample image file
+```
 
+## Features
 
+- RTSP session management (SETUP, PLAY, PAUSE, TEARDOWN)
+- RTP video streaming over UDP
+- Real-time video display
+- Packet loss detection
+- Frame rate control
+- Debug logging
+- Multiple client support
+- GUI client interface
 
-# MAC OS/X Special considerations
+## Development
 
-Weirdly enough, Mac OS/X has a limit for UDP datagrams of:
+1. Activate virtual environment:
+```bash
+poetry shell
+```
 
-9216
+2. Instal·lar dependències:
+```bash
+poetry install
+```
 
-Solve it with:
+### Execució del servidor
 
-sudo sysctl -w net.inet.udp.maxdgram=65535
+```bash
+# Execució bàsica
+poetry run xarxes2025 server
 
-This is a temporary fix, next reboot, solve it again.
+# Amb port específic
+poetry run xarxes2025 server -p 4321
+
+# Amb mode debug
+poetry run xarxes2025 --debug server
+
+# Amb nivell de debug específic
+poetry run xarxes2025 --debug --debug-level DEBUG server
+```
+
+### Execució del client
+
+```bash
+# Execució bàsica
+poetry run xarxes2025 client
+
+# Amb vídeo específic
+poetry run xarxes2025 client rick.webm
+
+# Amb port específic
+poetry run xarxes2025 client -p 4321
+
+# Amb totes les opcions
+poetry run xarxes2025 client artificial.webm -p 4321 -h localhost -u 25000
+
+# Amb mode debug
+poetry run xarxes2025 --debug client rick.webm
+
+# Amb debug detallat
+poetry run xarxes2025 --debug --debug-level DEBUG client operating.webm
+```
+
+### Opcions disponibles
+
+#### Opcions globals
+- `--debug`: Activa el mode debug
+- `--debug-level`: Estableix el nivell de logging (DEBUG, INFO, WARNING, ERROR)
+
+#### Opcions del servidor
+- `-p, --port`: Port RTSP (per defecte: 1234)
+- `-h, --host`: Adreça IP del servidor (per defecte: localhost)
+
+#### Opcions del client
+- `-p, --port`: Port RTSP del servidor (per defecte: 1234)
+- `-h, --host`: Adreça IP del servidor (per defecte: localhost)
+- `-u, --udp-port`: Port UDP local per RTP (per defecte: 3000)
+
+### Fitxers de vídeo disponibles
+- `rick.webm`: Vídeo principal de prova
+- `artificial.webm`: Vídeo alternatiu
+- `operating.webm`: Vídeo alternatiu
+- `rick.webp`: Imatge de prova
+
+## Configuration
+
+Server options:
+- `--port`: RTSP port (default: 4321)
+- `--host`: Server IP address (default: localhost)
+- `--max-frames`: Maximum frames to stream (default: None)
+- `--frame-rate`: Frames per second (default: 25)
+
+Client options:
+- `--port`: Server RTSP port (default: 4321)
+- `--host`: Server IP address (default: localhost)
+- `--udp-port`: Local UDP port for RTP (default: 25000)
+
+## License
+
+[Your license here]
+
+## Authors
+
+Gerard Safont <gsc23@alumnes.udl.cat>
