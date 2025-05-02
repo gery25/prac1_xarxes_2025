@@ -20,7 +20,7 @@ This project implements a client-server video streaming solution using:
 
 ## Installation
 
-1. Assegura't de tenir les dependències del sistema:
+1. Instal·la les dependències del sistema:
 ```bash
 sudo apt update
 sudo apt install python3 python3-pip python3-venv python3-dev
@@ -33,8 +33,8 @@ curl -sSL https://install.python-poetry.org | python3 -
 
 3. Clona el repositori:
 ```bash
-git clone <repository-url>
-cd xarxes2025
+git clone https://github.com/gery25/prac1_xarxes_2025.git
+cd prac1_xarxes_2025
 ```
 
 4. Configura Poetry per crear l'entorn virtual al projecte:
