@@ -20,54 +20,54 @@ This project implements a client-server video streaming solution using:
 
 ## Installation
 
-1. Instal·la les dependències del sistema:
+1. Install system dependencies:
 ```bash
 sudo apt update
 sudo apt install python3 python3-pip python3-venv python3-dev
 ```
 
-2. Instal·la Poetry:
+2. Install Poetry:
 ```bash
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-3. Clona el repositori:
+3. Clone the repository:
 ```bash
 git clone https://github.com/gery25/prac1_xarxes_2025.git
 cd prac1_xarxes_2025
 ```
 
-4. Configura Poetry per crear l'entorn virtual al projecte:
+4. Configure Poetry to create virtual environment in project:
 ```bash
 poetry config virtualenvs.in-project true
 ```
 
-5. Instal·la les dependències:
+5. Install dependencies:
 ```bash
 poetry install
 ```
 
-6. Verifica la instal·lació:
+6. Verify installation:
 ```bash
 poetry run xarxes2025 --version
 ```
 
-### Resolució de problemes
+### Troubleshooting
 
-Si tens errors amb Pillow o OpenCV:
+If you have errors with Pillow or OpenCV:
 ```bash
 sudo apt install libjpeg-dev zlib1g-dev libopencv-dev
 poetry install
 ```
 
-Si tens problemes amb els permisos:
+If you have permission issues:
 ```bash
-# Verifica els permisos dels fitxers de vídeo
+# Verify video file permissions
 chmod 644 *.webm
 chmod 644 *.webp
 ```
 
-Si necessites reinstal·lar tot:
+If you need to reinstall everything:
 ```bash
 rm -rf .venv/
 rm -f poetry.lock
@@ -149,69 +149,69 @@ xarxes2025/
 poetry shell
 ```
 
-2. Instal·lar dependències:
+2. Install dependencies:
 ```bash
 poetry install
 ```
 
-### Execució del servidor
+### Server Execution
 
 ```bash
-# Execució bàsica
+# Basic execution
 poetry run xarxes2025 server
 
-# Amb port específic
+# With specific port
 poetry run xarxes2025 server -p 4321
 
-# Amb mode debug
+# With debug mode
 poetry run xarxes2025 --debug server
 
-# Amb nivell de debug específic
+# With specific debug level
 poetry run xarxes2025 --debug --debug-level DEBUG server
 ```
 
-### Execució del client
+### Client Execution
 
 ```bash
-# Execució bàsica
+# Basic execution
 poetry run xarxes2025 client
 
-# Amb vídeo específic
+# With specific video
 poetry run xarxes2025 client rick.webm
 
-# Amb port específic
+# With specific port
 poetry run xarxes2025 client -p 4321
 
-# Amb totes les opcions
+# With all options
 poetry run xarxes2025 client artificial.webm -p 4321 -h localhost -u 25000
 
-# Amb mode debug
+# With debug mode
 poetry run xarxes2025 --debug client rick.webm
 
-# Amb debug detallat
+# With detailed debug
 poetry run xarxes2025 --debug --debug-level DEBUG client operating.webm
 ```
 
-### Opcions disponibles
+### Available Options
 
-#### Opcions globals
-- `--debug`: Activa el mode debug
-- `--debug-level`: Estableix el nivell de logging (DEBUG, INFO, WARNING, ERROR)
+#### Global Options
+- `--debug`: Enables debug mode
+- `--debug-level`: Sets logging level (DEBUG, INFO, WARNING, ERROR)
 
-#### Opcions del servidor
-- `-p, --port`: Port RTSP (per defecte: 1234)
-- `-h, --host`: Adreça IP del servidor (per defecte: localhost)
+#### Server Options
+- `-p, --port`: RTSP port (default: 1234)
+- `-h, --host`: Server IP address (default: localhost)
 
-#### Opcions del client
-- `-p, --port`: Port RTSP del servidor (per defecte: 1234)
-- `-h, --host`: Adreça IP del servidor (per defecte: localhost)
-- `-u, --udp-port`: Port UDP local per RTP (per defecte: 3000)
+#### Client Options
+- `-p, --port`: Server RTSP port (default: 1234)
+- `-h, --host`: Server IP address (default: localhost)
+- `-u, --udp-port`: Local UDP port for RTP (default: 3000)
 
-### Fitxers de vídeo disponibles
-- `rick.webm`: Vídeo principal de prova
-- `artificial.webm`: Vídeo alternatiu
-- `operating.webm`: Vídeo alternatiu
-- `rick.webp`: Imatge de prova
+### Available Video Files
+- `rick.webm`: Main test video
+- `artificial.webm`: Alternative video
+- `operating.webm`: Alternative video
+- `rick.webp`: Test image
 
 ## Configuration
 
