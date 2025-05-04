@@ -15,26 +15,43 @@ class ClientHandler (threading.Thread):
     """
     def __init__(self, client_socket, client_address, options):
         """
-        Initialize client handler thread.
+        Initialize a new client handler thread.
 
         Args:
-            client_socket: TCP socket for RTSP communication
-            client_address: Client's address information
-            options: Server configuration options including:
-                    - max_frames: Maximum frames to stream
-                    - frame_rate: Video frame rate (FPS)
+            client_socket (socket): TCP socket for RTSP communication
+            client_address (tuple): Client's address information (ip, port)
+            options (object): Server configuration containing:
+                            - max_frames (int): Maximum frames to stream (None = unlimited)
+                            - frame_rate (int): Video frame rate in FPS
+
+        The handler initializes:
+        - Network sockets (TCP for RTSP, UDP for RTP)
+        - Client connection information
+        - Streaming control variables
+        - Frame handling parameters
+        - RTSP state machine
         """
-        super().__init__() # cridar al constructor de la superclase Thread
-        self.client_socket = client_socket
-        self.client_address = client_address
-        self.filename = None
-        self.num_seq = 0
-        self.client_port_udp = None
-        self.socketudp = None
-        self.frame_number = 0
-        self.max_frames = options.max_frames
-        self.frames_rate = options.frame_rate
-        self.state = State_machine()
+        super().__init__()  # Call Thread parent class constructor
+
+        # Network sockets initialization
+        self.client_socket = client_socket  # RTSP socket
+        self.socketudp = None               # RTP socket (created during SETUP)
+
+        # Client connection parameters
+        self.client_address = client_address  # Client IP and port
+        self.client_port_udp = None          # Client's RTP port
+
+        # Server control variables
+        self.filename = None                 # Video file to stream
+        self.num_seq = 0                     # RTSP sequence number
+        self.frame_number = 0                # Current frame number
+
+        # Streaming configuration
+        self.max_frames = options.max_frames  # Maximum frames to send
+        self.frames_rate = options.frame_rate # Frame rate in FPS
+
+        # RTSP state management
+        self.state = State_machine()          # Handles protocol states
 
 
     def run(self):
